@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "polycoin",
+  "version": "${version}",
+  "name": "PolyCoin",
+  "description": "TODO",
+  "authors": [],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/polycoin/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "polycube.polycoin.Polycoin"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
