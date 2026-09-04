@@ -68,9 +68,17 @@ public final class PolyCoinEconomyCurrency
         return Component.literal(name);
     }
 
+    public String displayName() {
+        return name;
+    }
+
     @Override
     public ItemStack icon() {
         return icon.getDefaultInstance();
+    }
+
+    public Item iconItem() {
+        return icon;
     }
 
     @Override
@@ -98,6 +106,10 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public BigInteger parseValue(String value) throws NumberFormatException {
+        return parseAmount(value);
+    }
+
+    public static BigInteger parseAmount(String value) throws NumberFormatException {
         Objects.requireNonNull(value, "value");
         String input = value.strip();
 

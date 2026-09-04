@@ -69,7 +69,7 @@ public final class PolyCoinEconomyData extends SavedData {
         Objects.requireNonNull(currencies, "currencies");
         Objects.requireNonNull(accounts, "accounts");
 
-        this.currencies = new HashMap<>(currencies.size() + 1);
+        this.currencies = new ConcurrentHashMap<>(currencies.size() + 1);
         this.accounts = new ConcurrentHashMap<>(accounts.size());
 
         // Validate and copy currencies.
@@ -250,6 +250,82 @@ public final class PolyCoinEconomyData extends SavedData {
         return getCurrency(currencyId.getPath());
     }
 
+    public synchronized @Nullable PolyCoinEconomyCurrency createCurrency(
+            Identifier id, String name, Item icon, BigInteger defaultBalance
+    ) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(icon, "icon");
+        Objects.requireNonNull(defaultBalance, "defaultBalance");
+
+        PolyCoinEconomyCurrency currency = new PolyCoinEconomyCurrency(id, name, icon, defaultBalance);
+        if (currencies.putIfAbsent(id.getPath(), currency) != null) return null;
+
+        setDirty();
+        return currency;
+    }
+
+    public synchronized @Nullable PolyCoinEconomyCurrency updateCurrency(
+            Identifier id, String name, Item icon, BigInteger defaultBalance
+    ) {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(icon, "icon");
+        Objects.requireNonNull(defaultBalance, "defaultBalance");
+
+        PolyCoinEconomyCurrency current = getCurrency(id);
+        if (current == null) return null;
+        if (current.displayName().equals(name) && current.iconItem() == icon && current.defaultBalance().equals(defaultBalance)) {
+            return current;
+        }
+
+        PolyCoinEconomyCurrency updated = new PolyCoinEconomyCurrency(id, name, icon, defaultBalance);
+        currencies.put(id.getPath(), updated);
+        setDirty();
+        return updated;
+    }
+
+    public int countAccounts(PolyCoinEconomyCurrency currency) {
+        Objects.requireNonNull(currency, "currency");
+        if (getCurrency(currency.id()) != currency) {
+            throw new IllegalArgumentException("Currency is not managed by this economy data: " + currency.id());
+        }
+
+        int count = 0;
+        for (Map<String, PolyCoinEconomyAccount> playerAccounts : accounts.values()) {
+            for (PolyCoinEconomyAccount account : playerAccounts.values()) {
+                if (account.usesCurrency(currency.id())) count++;
+            }
+        }
+        return count;
+    }
+
+    public synchronized @Nullable CurrencyDeletionResult deleteCurrency(Identifier id) {
+        Objects.requireNonNull(id, "id");
+        if (MAIN_CURRENCY_ID.equals(id)) {
+            throw new IllegalArgumentException("The main currency cannot be deleted");
+        }
+
+        PolyCoinEconomyCurrency currency = getCurrency(id);
+        if (currency == null) return null;
+
+        int deletedAccounts = 0;
+        for (var ownerEntry : accounts.entrySet()) {
+            Map<String, PolyCoinEconomyAccount> playerAccounts = ownerEntry.getValue();
+            int sizeBefore = playerAccounts.size();
+            playerAccounts.entrySet().removeIf(entry -> entry.getValue().usesCurrency(currency.id()));
+            deletedAccounts += sizeBefore - playerAccounts.size();
+            if (playerAccounts.isEmpty()) accounts.remove(ownerEntry.getKey(), playerAccounts);
+        }
+
+        if (!currencies.remove(id.getPath(), currency)) {
+            throw new IllegalStateException("Currency changed while it was being deleted: " + id);
+        }
+
+        setDirty();
+        return new CurrencyDeletionResult(currency, deletedAccounts);
+    }
+
     public @Nullable String defaultAccount(GameProfile profile, EconomyCurrency currency) {
         Objects.requireNonNull(profile, "profile");
         Objects.requireNonNull(profile.id(), "profile id");
@@ -303,5 +379,7 @@ public final class PolyCoinEconomyData extends SavedData {
         }
         return currency;
     }
+
+    public record CurrencyDeletionResult(PolyCoinEconomyCurrency currency, int deletedAccounts) {}
 
 }

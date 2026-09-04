@@ -1,6 +1,7 @@
 package polycube.polycoin.commands;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -75,12 +76,16 @@ public abstract class PolyCoinCommand {
 
     }
 
-    public List<LiteralArgumentBuilder<CommandSourceStack>> getCommands() {
+    public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name, CommandBuildContext buildContext) {
+        return getCommand(name);
+    }
+
+    public List<LiteralArgumentBuilder<CommandSourceStack>> getCommands(CommandBuildContext buildContext) {
         var commands = new ArrayList<LiteralArgumentBuilder<CommandSourceStack>>();
         var aliases = new ArrayList<>(getAliases());
         aliases.add(name);
         for (String alias : aliases) {
-            commands.add(getCommand(alias));
+            commands.add(getCommand(alias, buildContext));
         }
         return commands;
     }

@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import polycube.polycoin.economy.PolyCoinEconomyProvider;
 import polycube.polycoin.commands.BalanceCommand;
 import polycube.polycoin.commands.BalanceTopCommand;
+import polycube.polycoin.commands.CurrencyCommand;
 import polycube.polycoin.commands.HelpCommand;
 import polycube.polycoin.commands.PayCommand;
 import polycube.polycoin.commands.PolyCoinCommand;
@@ -27,6 +28,7 @@ public class PolyCoin implements ModInitializer {
                 new HelpCommand(),
                 new BalanceCommand(),
                 new BalanceTopCommand(),
+                new CurrencyCommand(),
                 new PayCommand()
         };
         PolyCoinCommands.registerCommands(commands);

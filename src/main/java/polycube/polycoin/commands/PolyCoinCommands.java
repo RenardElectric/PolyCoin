@@ -19,11 +19,11 @@ public final class PolyCoinCommands {
 
     public static void registerCommands(PolyCoinCommand... commands) {
         PolyCoinCommands.commands = commands;
-        CommandRegistrationCallback.EVENT.register((dispatcher, _, _) -> {
+        CommandRegistrationCallback.EVENT.register((dispatcher, buildContext, _) -> {
             var baseCommand = Commands.literal(PolyCoin.MOD_ID);
             baseCommand.executes(context -> printModInfo(context.getSource()));
             for (PolyCoinCommand command : commands) {
-                for (var commandAlias : command.getCommands()) {
+                for (var commandAlias : command.getCommands(buildContext)) {
                     baseCommand.then(commandAlias);
                     if (command.hasQuickAlias()) dispatcher.register(commandAlias);
                 }
