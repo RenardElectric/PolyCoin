@@ -1,4 +1,4 @@
 @NullMarked
-package polycube.polycard.commands.commandArguments;
+package polycube.polycoin.commands;
 
 import org.jspecify.annotations.NullMarked;

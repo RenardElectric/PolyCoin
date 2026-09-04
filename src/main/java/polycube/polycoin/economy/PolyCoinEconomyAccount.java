@@ -1,4 +1,4 @@
-package polycube.polycoin.EconomyProvider;
+package polycube.polycoin.economy;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
@@ -13,62 +13,33 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
-import polycube.polycoin.Utils.Helpers;
+import polycube.polycoin.util.Helpers;
 
 import java.math.BigInteger;
-import java.util.Objects;
 import java.util.UUID;
 
 public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     private static final Codec<Identifier> POLYCOIN_IDENTIFIER_CODEC =
             Identifier.CODEC.validate(id -> {
-                if (PolyCoin.MOD_ID.equals(id.getNamespace())) {
-                    return DataResult.success(id);
-                }
-
-                return DataResult.error(
-                        () -> "Expected PolyCoin identifier, got: " + id
-                );
+                if (PolyCoin.MOD_ID.equals(id.getNamespace())) return DataResult.success(id);
+                return DataResult.error(() -> "Expected PolyCoin identifier, got: " + id);
             });
 
     private static final Codec<BigInteger> BALANCE_CODEC =
             Helpers.BIG_INTEGER_CODEC.validate(value -> {
-                if (value.signum() >= 0) {
-                    return DataResult.success(value);
-                }
-
-                return DataResult.error(
-                        () -> "Account balance cannot be negative: " + value
-                );
+                if (value.signum() >= 0) return DataResult.success(value);
+                return DataResult.error(() -> "Account balance cannot be negative: " + value);
             });
 
     public static final Codec<PolyCoinEconomyAccount> CODEC =
             RecordCodecBuilder.create(instance -> instance.group(
-                    POLYCOIN_IDENTIFIER_CODEC
-                            .fieldOf("id")
-                            .forGetter(account -> account.id),
-
-                    POLYCOIN_IDENTIFIER_CODEC
-                            .fieldOf("currency")
-                            .forGetter(account -> account.currencyId),
-
-                    BALANCE_CODEC
-                            .fieldOf("balance")
-                            .forGetter(account -> account.balance),
-
-                    UUIDUtil.STRING_CODEC
-                            .fieldOf("owner")
-                            .forGetter(account -> account.owner),
-
-                    Codec.STRING
-                            .fieldOf("name")
-                            .forGetter(account -> account.name),
-
-                    BuiltInRegistries.ITEM
-                            .byNameCodec()
-                            .fieldOf("icon")
-                            .forGetter(account -> account.icon)
+                    POLYCOIN_IDENTIFIER_CODEC.fieldOf("id").forGetter(account -> account.id),
+                    POLYCOIN_IDENTIFIER_CODEC.fieldOf("currency").forGetter(account -> account.currencyId),
+                    BALANCE_CODEC.fieldOf("balance").forGetter(account -> account.balance),
+                    UUIDUtil.STRING_CODEC.fieldOf("owner").forGetter(account -> account.owner),
+                    Codec.STRING.fieldOf("name").forGetter(account -> account.name),
+                    BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(account -> account.icon)
             ).apply(instance, PolyCoinEconomyAccount::new));
 
     private final Identifier id;
@@ -80,70 +51,37 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     private final String name;
     private final Item icon;
 
-    /*
-     * Runtime backlink only.
-     *
-     * It is intentionally not part of CODEC.
-     */
-    private transient @Nullable PolyCoinEconomyData data;
+    private @Nullable PolyCoinEconomyData data;
 
     public PolyCoinEconomyAccount(
-            Identifier id,
-            Identifier currencyId,
-            BigInteger balance,
-            UUID owner,
-            String name,
-            Item icon
+            Identifier id, Identifier currencyId, BigInteger balance,
+            UUID owner, String name, Item icon
     ) {
         this.id = requirePolyCoinIdentifier(id, "id");
-        this.currencyId =
-                requirePolyCoinIdentifier(currencyId, "currencyId");
+        this.currencyId = requirePolyCoinIdentifier(currencyId, "currencyId");
 
         this.balance = requireNonNegative(balance, "balance");
 
-        this.owner = Objects.requireNonNull(owner, "owner");
-        this.name = Objects.requireNonNull(name, "name");
-        this.icon = Objects.requireNonNull(icon, "icon");
+        this.owner = owner;
+        this.name = name;
+        this.icon = icon;
     }
 
     void attach(PolyCoinEconomyData data) {
-        Objects.requireNonNull(data, "data");
-
         if (this.data != null && this.data != data) {
-            throw new IllegalStateException(
-                    "Account "
-                            + id
-                            + " is already attached to another economy data instance"
-            );
+            throw new IllegalStateException("Account " + id + " is already attached to another economy data instance");
         }
-
-        /*
-         * Catch broken saves immediately rather than failing later in
-         * currency().
-         */
         if (data.getCurrency(currencyId) == null) {
-            throw new IllegalStateException(
-                    "Account "
-                            + id
-                            + " references unknown currency "
-                            + currencyId
-            );
+            throw new IllegalStateException("Account " + id + " references unknown currency " + currencyId);
         }
-
         this.data = data;
     }
 
     private PolyCoinEconomyData requireData() {
         PolyCoinEconomyData data = this.data;
-
         if (data == null) {
-            throw new IllegalStateException(
-                    "Economy account "
-                            + id
-                            + " is not attached to PolyCoinEconomyData"
-            );
+            throw new IllegalStateException("Economy account " + id + " is not attached to PolyCoinEconomyData");
         }
-
         return data;
     }
 
@@ -177,94 +115,54 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public EconomyTransaction canIncreaseBalance(BigInteger value) {
-        Objects.requireNonNull(value, "value");
-
         BigInteger current = balance;
 
-        /*
-         * Prevent increaseBalance(-x) from behaving like withdrawal.
-         */
         if (value.signum() < 0) {
             return new EconomyTransaction.Simple(
-                    false,
-                    Component.literal("Amount cannot be negative"),
-                    current,
-                    current,
-                    BigInteger.ZERO,
-                    this
+                    false, Component.literal("Amount cannot be negative"),
+                    current, current, BigInteger.ZERO, this
             );
         }
 
         return new EconomyTransaction.Simple(
-                true,
-                Component.literal("Success"),
-                current.add(value),
-                current,
-                value,
-                this
+                true, Component.literal("Success"),
+                current.add(value), current, value, this
         );
     }
 
     @Override
     public EconomyTransaction canDecreaseBalance(BigInteger value) {
-        Objects.requireNonNull(value, "value");
-
         BigInteger current = balance;
 
-        /*
-         * Prevent decreaseBalance(-x) from becoming a deposit.
-         */
         if (value.signum() < 0) {
             return new EconomyTransaction.Simple(
-                    false,
-                    Component.literal("Amount cannot be negative"),
-                    current,
-                    current,
-                    BigInteger.ZERO,
-                    this
+                    false, Component.literal("Amount cannot be negative"),
+                    current, current, BigInteger.ZERO, this
             );
         }
 
         if (current.compareTo(value) < 0) {
             return new EconomyTransaction.Simple(
-                    false,
-                    Component.literal("Insufficient funds"),
-                    current,
-                    current,
-                    value.negate(),
-                    this
+                    false, Component.literal("Insufficient funds"),
+                    current, current, value.negate(), this
             );
         }
 
         return new EconomyTransaction.Simple(
-                true,
-                Component.literal("Success"),
-                current.subtract(value),
-                current,
-                value.negate(),
-                this
+                true, Component.literal("Success"),
+                current.subtract(value), current, value.negate(), this
         );
     }
 
     @Override
     public void setBalance(BigInteger value) {
-        value = requireNonNegative(value, "value");
+        requireNonNegative(value, "value");
 
-        /*
-         * An account that isn't attached cannot be persisted safely.
-         * Check this before mutating anything.
-         */
+        // An account that isn't attached cannot be persisted safely.
+        // Check this before mutating anything.
         PolyCoinEconomyData data = requireData();
-
-        if (balance.equals(value)) {
-            return;
-        }
-
+        if (balance.equals(value)) return;
         balance = value;
-
-        /*
-         * THIS is the SavedData object.
-         */
         data.setDirty();
     }
 
@@ -275,19 +173,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public PolyCoinEconomyCurrency currency() {
-        PolyCoinEconomyCurrency currency =
-                requireData().getCurrency(currencyId);
-
+        PolyCoinEconomyCurrency currency = requireData().getCurrency(currencyId);
         if (currency == null) {
-            throw new IllegalStateException(
-                    "Currency "
-                            + currencyId
-                            + " for account "
-                            + id
-                            + " no longer exists"
-            );
+            throw new IllegalStateException("Currency " + currencyId + " for account " + id + " no longer exists");
         }
-
         return currency;
     }
 
@@ -296,37 +185,18 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         return icon.getDefaultInstance();
     }
 
-    private static Identifier requirePolyCoinIdentifier(
-            Identifier id,
-            String name
-    ) {
-        Objects.requireNonNull(id, name);
-
+    private static Identifier requirePolyCoinIdentifier(Identifier id, String name) {
         if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
-            throw new IllegalArgumentException(
-                    name
-                            + " must use namespace '"
-                            + PolyCoin.MOD_ID
-                            + "': "
-                            + id
-            );
+            throw new IllegalArgumentException(name + " must use namespace '" + PolyCoin.MOD_ID + "': " + id);
         }
 
         return id;
     }
 
-    private static BigInteger requireNonNegative(
-            BigInteger value,
-            String name
-    ) {
-        Objects.requireNonNull(value, name);
-
+    private static BigInteger requireNonNegative(BigInteger value, String name) {
         if (value.signum() < 0) {
-            throw new IllegalArgumentException(
-                    name + " cannot be negative: " + value
-            );
+            throw new IllegalArgumentException(name + " cannot be negative: " + value);
         }
-
         return value;
     }
 }

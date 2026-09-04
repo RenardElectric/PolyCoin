@@ -1,10 +1,10 @@
-package polycube.polycard.commands;
+package polycube.polycoin.commands;
 
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.PermissionLevel;
 
-public class HelpCommand extends PolyCardCommand {
+public class HelpCommand extends PolyCoinCommand {
     public HelpCommand() {
         super(
                 "help",
@@ -17,7 +17,7 @@ public class HelpCommand extends PolyCardCommand {
     @Override
     protected int execute(CommandSourceStack source) {
         StringBuilder helpMessage = new StringBuilder("\nAvailable commands:");
-        for (PolyCardCommand command : PolyCardCommands.getCommands()) {
+        for (PolyCoinCommand command : PolyCoinCommands.getCommands()) {
             if (hasPermission(source, command.getPermissionLevel())) {
                 helpMessage.append("\n").append(command.getFullDescription());
             }

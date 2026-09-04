@@ -1,4 +1,4 @@
-package polycube.polycoin.EconomyProvider;
+package polycube.polycoin.economy;
 
 import com.mojang.authlib.GameProfile;
 import eu.pb4.common.economy.api.EconomyAccount;
@@ -65,7 +65,6 @@ public class PolyCoinEconomyProvider extends SavedData implements EconomyProvide
         }
         PolyCoin.LOGGER.debug("Loading PolyCoin economy provider");
         var polyCoinEconomyProvider = server.getDataStorage().computeIfAbsent(PolyCoinEconomyData.TYPE);
-        polyCoinEconomyProvider.server = server;
         serverData.put(server, polyCoinEconomyProvider);
         PolyCoin.LOGGER.debug("Loaded PolyCoin economy provider");
     }

@@ -4,8 +4,8 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.PermissionLevel;
 
-public class BalanceCommand extends PolyCoinCommand {
-    public BalanceCommand() {
+public class PayCommand extends PolyCoinCommand {
+    public PayCommand() {
         super(
                 "help",
                 "Displays a list of available commands and their descriptions",

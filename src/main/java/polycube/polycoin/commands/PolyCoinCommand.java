@@ -1,4 +1,4 @@
-package polycube.polycard.commands;
+package polycube.polycoin.commands;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.commands.CommandSourceStack;
@@ -6,16 +6,16 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permission;
 import net.minecraft.server.permissions.PermissionLevel;
-import polycube.polycard.PolyCard;
+import polycube.polycoin.PolyCoin;
 
-public abstract class PolyCardCommand {
+public abstract class PolyCoinCommand {
     private final String name;
     private final String description;
     private final String usage;
     private final PermissionLevel permissionLevel;
     private final boolean hasAlias;
 
-    public PolyCardCommand(String name, String description, String usage, PermissionLevel permissionLevel) {
+    public PolyCoinCommand(String name, String description, String usage, PermissionLevel permissionLevel) {
         this.name = name;
         this.description = description;
         this.usage = usage;
@@ -23,7 +23,7 @@ public abstract class PolyCardCommand {
         this.hasAlias = false;
     }
 
-    public PolyCardCommand(String name, String description, String usage, PermissionLevel permissionLevel, boolean hasAlias) {
+    public PolyCoinCommand(String name, String description, String usage, PermissionLevel permissionLevel, boolean hasAlias) {
         this.name = name;
         this.description = description;
         this.usage = usage;
@@ -40,7 +40,7 @@ public abstract class PolyCardCommand {
     }
 
     protected String getUsage() {
-        return "/" + PolyCard.MOD_ID + " " + name + (usage.isBlank() ? "" : " " + usage) + (hasAlias ? " (alias: /" + name + ")" : "");
+        return "/" + PolyCoin.MOD_ID + " " + name + (usage.isBlank() ? "" : " " + usage) + (hasAlias ? " (alias: /" + name + ")" : "");
     }
 
     protected String getFullDescription() {

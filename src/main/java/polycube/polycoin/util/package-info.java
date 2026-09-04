@@ -1,4 +1,4 @@
 @NullMarked
-package polycube.polycoin.Utils;
+package polycube.polycoin.util;
 
 import org.jspecify.annotations.NullMarked;

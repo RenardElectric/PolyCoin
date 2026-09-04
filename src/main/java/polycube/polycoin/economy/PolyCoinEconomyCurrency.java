@@ -1,4 +1,4 @@
-package polycube.polycoin.EconomyProvider;
+package polycube.polycoin.economy;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
@@ -9,12 +9,11 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import polycube.polycoin.PolyCoin;
-import polycube.polycoin.Utils.Helpers;
+import polycube.polycoin.util.Helpers;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.util.Objects;
 import java.util.regex.Pattern;
 
 public final class PolyCoinEconomyCurrency
@@ -28,17 +27,13 @@ public final class PolyCoinEconomyCurrency
 
     private static final Codec<Identifier> POLYCOIN_IDENTIFIER_CODEC =
             Identifier.CODEC.validate(id -> {
-                if (PolyCoin.MOD_ID.equals(id.getNamespace())) {
-                    return DataResult.success(id);
-                }
+                if (PolyCoin.MOD_ID.equals(id.getNamespace())) return DataResult.success(id);
                 return DataResult.error(() -> "Expected PolyCoin identifier, got: " + id);
             });
 
     private static final Codec<BigInteger> DEFAULT_BALANCE_CODEC =
             Helpers.BIG_INTEGER_CODEC.validate(value -> {
-                if (value.signum() >= 0) {
-                    return DataResult.success(value);
-                }
+                if (value.signum() >= 0) return DataResult.success(value);
                 return DataResult.error(() -> "Default balance cannot be negative: " + value);
             });
 
@@ -55,16 +50,10 @@ public final class PolyCoinEconomyCurrency
     private final Item icon;
     private final BigInteger defaultBalance;
 
-    public PolyCoinEconomyCurrency(
-            Identifier id,
-            String name,
-            Item icon,
-            BigInteger defaultBalance
-    ) {
+    public PolyCoinEconomyCurrency(Identifier id, String name, Item icon, BigInteger defaultBalance) {
         this.id = requirePolyCoinIdentifier(id);
         this.name = name;
         this.icon = icon;
-
         this.defaultBalance = requireNonNegative(defaultBalance, "defaultBalance");
     }
 
@@ -93,67 +82,30 @@ public final class PolyCoinEconomyCurrency
     }
 
     @Override
-    public String formatValue(
-            BigInteger value,
-            boolean precise
-    ) {
-        Objects.requireNonNull(value, "value");
-
-        // We currently display the exact two-decimal representation
-        // in both modes.
-        //
-        // Raw:
-        // 123456
-        //
-        // Displayed:
-        // 1234.56
-        //
-        // This fully satisfies precise=true.
-        //
-        // precise=false can later be changed to e.g. "1.23M"
-        // without changing storage.
-        return new BigDecimal(
-                value,
-                DECIMAL_PLACES
-        ).toPlainString();
+    public String formatValue(BigInteger value, boolean precise) {
+        // We currently display the exact two-decimal representation in both modes.
+        // Raw: 123456
+        // Displayed: 1234.56
+        return new BigDecimal(value, DECIMAL_PLACES).toPlainString();
     }
 
     @Override
-    public BigInteger parseValue(String value)
-            throws NumberFormatException {
-        Objects.requireNonNull(value, "value");
-
+    public BigInteger parseValue(String value) throws NumberFormatException {
         String input = value.strip();
 
         // BigDecimal itself accepts scientific notation. For a player
         // economy, accepting "1e20" accidentally is usually undesirable.
         if (!VALUE_PATTERN.matcher(input).matches()) {
-            throw new NumberFormatException(
-                    "Invalid monetary value: " + value
-            );
+            throw new NumberFormatException("Invalid monetary value: " + value);
         }
 
         try {
-            return new BigDecimal(input)
-                    // UNNECESSARY means we never silently round money.
-                    //
-                    // "1.234" -> rejected
-                    // "1.2300" -> accepted, because no precision is lost
-                    .setScale(
-                            DECIMAL_PLACES,
-                            RoundingMode.UNNECESSARY
-                    )
-                    .movePointRight(DECIMAL_PLACES)
-                    .toBigIntegerExact();
+            // UNNECESSARY means we never silently round money.
+            // "1.234" -> rejected
+            // "1.2300" -> accepted, because no precision is lost
+            return new BigDecimal(input).setScale(DECIMAL_PLACES, RoundingMode.UNNECESSARY).movePointRight(DECIMAL_PLACES).toBigIntegerExact();
         } catch (ArithmeticException exception) {
-            NumberFormatException result =
-                    new NumberFormatException(
-                            "Value has more than "
-                                    + DECIMAL_PLACES
-                                    + " decimal places of precision: "
-                                    + value
-                    );
-
+            NumberFormatException result = new NumberFormatException("Value has more than " + DECIMAL_PLACES + " decimal places of precision: " + value);
             result.initCause(exception);
             throw result;
         }

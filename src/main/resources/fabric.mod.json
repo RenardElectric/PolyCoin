@@ -1,22 +1,25 @@
 {
   "schemaVersion": 1,
-  "id": "polycoin",
-  "version": "${version}",
-  "name": "PolyCoin",
-  "description": "TODO",
-  "authors": [],
+  "id": "${mod_id}",
+  "version": "${mod_version}",
+  "name": "${mod_name}",
+  "description": "Economy system for Minecraft",
+  "authors": [
+    "RenardElectric"
+  ],
   "contact": {},
   "license": "MIT",
   "icon": "assets/polycoin/icon.png",
-  "environment": "server",
+  "environment": "*",
   "entrypoints": {
     "main": [
-      "polycube.polycoin.Polycoin"
+      "polycube.polycoin.PolyCoin"
     ]
   },
   "depends": {
+    "java": ">=${java_version}",
+    "minecraft": "${minecraft_version}",
     "fabricloader": ">=${loader_version}",
-    "fabric-api": "*",
-    "minecraft": "${minecraft_version}"
+    "fabric-api": ">=${fabric_api_version}"
   }
 }

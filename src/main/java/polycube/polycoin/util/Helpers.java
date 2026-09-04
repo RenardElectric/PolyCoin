@@ -1,4 +1,4 @@
-package polycube.polycoin.Utils;
+package polycube.polycoin.util;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
