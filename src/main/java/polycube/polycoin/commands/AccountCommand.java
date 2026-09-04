@@ -1,8 +1,11 @@
 package polycube.polycoin.commands;
 
+import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -10,12 +13,12 @@ import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.world.item.Item;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
+import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
@@ -24,25 +27,141 @@ import polycube.polycoin.economy.PolyCoinEconomyData;
 
 public final class AccountCommand extends PolyCoinCommand {
     private static final String ID_ARGUMENT = "account";
+    private final @Nullable String ownerArgument;
 
     public AccountCommand() {
+        this(null);
+    }
+
+    AccountCommand(@Nullable String ownerArgument) {
         super(
                 "account",
-                "Creates, deletes, inspects, and modifies your accounts",
-                "create <id> <name> <icon> <currencyId> | delete <id> [confirm] | modify <id> <name|icon|currencyId> [value]",
+                "Lists, creates, deletes, inspects, and modifies your accounts",
+                "list [currencyId] | info <id> | transfer <from> <to> <amount> | create <id> <name> <icon> <currencyId> | delete <id> [confirm] | modify <id> <name|icon|currencyId> [value]",
                 PermissionLevel.ALL
         );
+        this.ownerArgument = ownerArgument;
     }
 
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name, CommandBuildContext buildContext) {
-        return super.getCommand(name, buildContext)
+        return addSubcommands(super.getCommand(name, buildContext), buildContext);
+    }
+
+    <T extends ArgumentBuilder<CommandSourceStack, T>> T addSubcommands(T command, CommandBuildContext buildContext) {
+        return command
+                .then(Commands.literal("list")
+                        .executes(context -> listAccounts(context, null))
+                        .then(Commands.argument("currencyId", StringArgumentType.word())
+                                .suggests(CurrencyArgument::suggestCurrencies)
+                                .executes(context -> listAccounts(
+                                        context,
+                                        StringArgumentType.getString(context, "currencyId")
+                                ))
+                        )
+                )
+                .then(Commands.literal("info").then(
+                        Commands.argument(ID_ARGUMENT, StringArgumentType.word())
+                                .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, ownerArgument))
+                                .executes(context -> showAccountInfo(
+                                        context,
+                                        StringArgumentType.getString(context, ID_ARGUMENT)
+                                ))
+                ))
+                .then(transferCommand())
                 .then(createCommand(buildContext))
                 .then(deleteCommand())
                 .then(modifyCommand(buildContext));
     }
 
-    private static ArgumentBuilder<CommandSourceStack, ?> createCommand(CommandBuildContext buildContext) {
+    private int listAccounts(CommandContext<CommandSourceStack> context, @Nullable String rawCurrencyId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        GameProfile owner = AccountArgument.getOwner(context, ownerArgument);
+
+        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
+        PolyCoinEconomyCurrency filter = null;
+        if (rawCurrencyId != null) {
+            filter = findCurrency(source, data, rawCurrencyId);
+            if (filter == null) return 0;
+        }
+
+        var accountIds = filter == null ? data.getAccountIds(owner) : data.getAccountIds(owner, filter);
+        var message = Component.literal(ownerArgument == null ? "Your accounts" : "Accounts for " + owner.name());
+        if (filter != null) message.append(" for " + filter.id().getPath());
+        message.append(" (" + accountIds.size() + "):");
+
+        if (accountIds.isEmpty()) {
+            message.append("\nNo accounts found.");
+        } else {
+            for (String accountId : accountIds) {
+                PolyCoinEconomyAccount account = data.getAccount(owner, accountId);
+                if (account == null) continue;
+                PolyCoinEconomyCurrency currency = account.currency();
+                message.append("\n- " + accountId + " - ").append(account.name())
+                        .append(": ").append(currency.formatValueComponent(account.balance(), true))
+                        .append(" [" + currency.id().getPath() + "]");
+            }
+        }
+
+        source.sendSuccess(() -> message, false);
+        return 1;
+    }
+
+    private int showAccountInfo(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
+
+        PolyCoinEconomyAccount account = selection.account();
+        PolyCoinEconomyCurrency currency = account.currency();
+        String defaultAccountId = selection.data().defaultAccount(selection.owner(), currency);
+        var message = Component.literal("Account: " + account.id())
+                .append("\nName: ").append(account.name())
+                .append("\nOwner: ").append(Component.literal(selection.owner().name()))
+                .append(" (" + account.owner() + ")")
+                .append("\nIcon: " + BuiltInRegistries.ITEM.getKey(account.iconItem()))
+                .append("\nCurrency: " + currency.id() + " - ").append(currency.name())
+                .append("\nBalance: ").append(currency.formatValueComponent(account.balance(), true))
+                .append("\nMain account: " + (PolyCoinEconomyData.MAIN_ACCOUNT_ID.equals(account.id()) ? "yes" : "no"))
+                .append("\nDefault for this currency: " + (account.id().getPath().equals(defaultAccountId) ? "yes" : "no"));
+
+        source.sendSuccess(() -> message, false);
+        return 1;
+    }
+
+    private ArgumentBuilder<CommandSourceStack, ?> transferCommand() {
+        return Commands.literal("transfer").then(
+                Commands.argument("from", StringArgumentType.string())
+                        .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, ownerArgument))
+                        .then(Commands.argument("to", StringArgumentType.string())
+                                .suggests((context, builder) -> AccountArgument.suggestTransferTargets(context, builder, ownerArgument, "from"))
+                                .then(Commands.argument("amount", StringArgumentType.word())
+                                        .executes(this::transfer)
+                                )
+                        )
+        );
+    }
+
+    private int transfer(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        var amount = AmountArgument.parse(StringArgumentType.getString(context, "amount"), false);
+        AccountSelection selection = findAccount(context, StringArgumentType.getString(context, "from"));
+        PolyCoinEconomyAccount target = AccountArgument.getAccount(
+                selection.data(), selection.owner(), StringArgumentType.getString(context, "to")
+        );
+        var result = selection.data().transfer(selection.account(), target, amount);
+        if (!result.successful()) {
+            context.getSource().sendFailure(result.message());
+            return 0;
+        }
+        var message = Component.literal("Transferred ")
+                .append(selection.account().currency().formatValueComponent(amount, true))
+                .append(" from ").append(selection.account().name())
+                .append(" to ").append(target.name())
+                .append(" for " + selection.owner().name() + ".");
+        context.getSource().sendSuccess(() -> message, ownerArgument != null);
+        return 1;
+    }
+
+    private ArgumentBuilder<CommandSourceStack, ?> createCommand(CommandBuildContext buildContext) {
         return Commands.literal("create").then(
                 Commands.argument(ID_ARGUMENT, StringArgumentType.word()).then(
                         Commands.argument("name", StringArgumentType.string()).then(
@@ -50,7 +169,7 @@ public final class AccountCommand extends PolyCoinCommand {
                                         Commands.argument("currencyId", StringArgumentType.word())
                                                 .suggests(CurrencyArgument::suggestCurrencies)
                                                 .executes(context -> createAccount(
-                                                        context.getSource(),
+                                                        context,
                                                         StringArgumentType.getString(context, ID_ARGUMENT),
                                                         StringArgumentType.getString(context, "name"),
                                                         ItemArgument.getItem(context, "icon").item().value(),
@@ -62,58 +181,58 @@ public final class AccountCommand extends PolyCoinCommand {
         );
     }
 
-    private static ArgumentBuilder<CommandSourceStack, ?> deleteCommand() {
+    private ArgumentBuilder<CommandSourceStack, ?> deleteCommand() {
         return Commands.literal("delete").then(
                 Commands.argument(ID_ARGUMENT, StringArgumentType.word())
-                        .suggests(AccountArgument::suggestAccounts)
+                        .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, ownerArgument))
                         .executes(context -> requestDeletion(
-                                context.getSource(),
+                                context,
                                 StringArgumentType.getString(context, ID_ARGUMENT)
                         ))
                         .then(Commands.literal("confirm").executes(context -> deleteAccount(
-                                context.getSource(),
+                                context,
                                 StringArgumentType.getString(context, ID_ARGUMENT)
                         )))
         );
     }
 
-    private static ArgumentBuilder<CommandSourceStack, ?> modifyCommand(CommandBuildContext buildContext) {
+    private ArgumentBuilder<CommandSourceStack, ?> modifyCommand(CommandBuildContext buildContext) {
         return Commands.literal("modify").then(
                 Commands.argument(ID_ARGUMENT, StringArgumentType.word())
-                        .suggests(AccountArgument::suggestAccounts)
+                        .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, ownerArgument))
                         .then(Commands.literal("name")
                                 .executes(context -> queryName(
-                                        context.getSource(),
+                                        context,
                                         StringArgumentType.getString(context, ID_ARGUMENT)
                                 ))
                                 .then(Commands.argument("value", StringArgumentType.string())
                                         .executes(context -> setName(
-                                                context.getSource(),
+                                                context,
                                                 StringArgumentType.getString(context, ID_ARGUMENT),
                                                 StringArgumentType.getString(context, "value")
                                         )))
                         )
                         .then(Commands.literal("icon")
                                 .executes(context -> queryIcon(
-                                        context.getSource(),
+                                        context,
                                         StringArgumentType.getString(context, ID_ARGUMENT)
                                 ))
                                 .then(Commands.argument("value", ItemArgument.item(buildContext))
                                         .executes(context -> setIcon(
-                                                context.getSource(),
+                                                context,
                                                 StringArgumentType.getString(context, ID_ARGUMENT),
                                                 ItemArgument.getItem(context, "value").item().value()
                                         )))
                         )
                         .then(Commands.literal("currencyId")
                                 .executes(context -> queryCurrency(
-                                        context.getSource(),
+                                        context,
                                         StringArgumentType.getString(context, ID_ARGUMENT)
                                 ))
                                 .then(Commands.argument("value", StringArgumentType.word())
                                         .suggests(CurrencyArgument::suggestCurrencies)
                                         .executes(context -> setCurrency(
-                                                context.getSource(),
+                                                context,
                                                 StringArgumentType.getString(context, ID_ARGUMENT),
                                                 StringArgumentType.getString(context, "value")
                                         )))
@@ -121,18 +240,17 @@ public final class AccountCommand extends PolyCoinCommand {
         );
     }
 
-    private static int createAccount(
-            CommandSourceStack source,
+    private int createAccount(
+            CommandContext<CommandSourceStack> context,
             String rawId,
             String name,
             Item icon,
             String rawCurrencyId
-    ) {
-        ServerPlayer player = requirePlayer(source);
-        if (player == null) return 0;
+    ) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        GameProfile owner = AccountArgument.getOwner(context, ownerArgument);
 
-        Identifier id = parseAccountId(source, rawId);
-        if (id == null) return 0;
+        Identifier id = AccountArgument.parseId(rawId);
         if (PolyCoinEconomyData.MAIN_ACCOUNT_ID.equals(id)) {
             source.sendFailure(Component.literal("The main_account id is reserved."));
             return 0;
@@ -146,7 +264,7 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyCurrency currency = findCurrency(source, data, rawCurrencyId);
         if (currency == null) return 0;
 
-        PolyCoinEconomyAccount account = data.createAccount(player.getGameProfile(), id, name, icon, currency);
+        PolyCoinEconomyAccount account = data.createAccount(owner, id, name, icon, currency);
         if (account == null) {
             source.sendFailure(Component.literal("Account already exists: " + id.getPath()));
             return 0;
@@ -154,59 +272,58 @@ public final class AccountCommand extends PolyCoinCommand {
 
         source.sendSuccess(
                 () -> Component.literal("Created account " + id.getPath() + " (" + name + ") using currency "
-                        + currency.id().getPath() + " with a zero balance."),
-                false
+                        + currency.id().getPath() + " for " + owner.name() + " with a zero balance."),
+                ownerArgument != null
         );
         return 1;
     }
 
-    private static int requestDeletion(CommandSourceStack source, String rawId) {
-        ServerPlayer player = requirePlayer(source);
-        if (player == null) return 0;
+    private int requestDeletion(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        GameProfile owner = AccountArgument.getOwner(context, ownerArgument);
 
-        Identifier id = parseAccountId(source, rawId);
-        if (id == null) return 0;
+        Identifier id = AccountArgument.parseId(rawId);
         if (PolyCoinEconomyData.MAIN_ACCOUNT_ID.equals(id)) {
             source.sendFailure(Component.literal("The main account cannot be deleted."));
             return 0;
         }
 
-        PolyCoinEconomyAccount account = findAccount(source, player, id);
-        if (account == null) return 0;
+        PolyCoinEconomyAccount account = AccountArgument.getAccount(
+                PolyCoin.INSTANCE.getData(source.getServer()), owner, id.getPath()
+        );
         source.sendFailure(Component.literal(
                 "This will permanently delete account " + id.getPath() + " with balance "
                         + account.currency().formatValue(account.balance(), true) + " "
-                        + account.currency().displayName() + ". Run /" + PolyCoin.MOD_ID
-                        + " account delete " + id.getPath() + " confirm to continue."
+                        + account.currency().displayName() + " owned by " + owner.name()
+                        + ". Run " + deletionCommand(owner, id) + " to continue."
         ));
         return 0;
     }
 
-    private static int deleteAccount(CommandSourceStack source, String rawId) {
-        ServerPlayer player = requirePlayer(source);
-        if (player == null) return 0;
+    private int deleteAccount(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        GameProfile owner = AccountArgument.getOwner(context, ownerArgument);
 
-        Identifier id = parseAccountId(source, rawId);
-        if (id == null) return 0;
+        Identifier id = AccountArgument.parseId(rawId);
         if (PolyCoinEconomyData.MAIN_ACCOUNT_ID.equals(id)) {
             source.sendFailure(Component.literal("The main account cannot be deleted."));
             return 0;
         }
 
         PolyCoinEconomyAccount deleted = PolyCoin.INSTANCE.getData(source.getServer())
-                .deleteAccount(player.getGameProfile(), id);
+                .deleteAccount(owner, id);
         if (deleted == null) {
             source.sendFailure(Component.literal("Unknown account: " + rawId));
             return 0;
         }
 
-        source.sendSuccess(() -> Component.literal("Deleted account " + id.getPath() + "."), false);
+        source.sendSuccess(() -> Component.literal("Deleted account " + id.getPath() + " for " + owner.name() + "."), ownerArgument != null);
         return 1;
     }
 
-    private static int queryName(CommandSourceStack source, String rawId) {
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+    private int queryName(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
         source.sendSuccess(
                 () -> Component.literal(selection.account().id().getPath() + " name: "
                         + selection.account().displayName()),
@@ -215,25 +332,28 @@ public final class AccountCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int setName(CommandSourceStack source, String rawId, String value) {
+    private int setName(CommandContext<CommandSourceStack> context, String rawId, String value) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
         if (value.isBlank()) {
             source.sendFailure(Component.literal("Account name cannot be blank."));
             return 0;
         }
 
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+        AccountSelection selection = findAccount(context, rawId);
         PolyCoinEconomyAccount account = selection.account();
         selection.data().updateAccount(
-                selection.player().getGameProfile(), account.id(), value, account.iconItem(), account.currency()
+                selection.owner(), account.id(), value, account.iconItem(), account.currency()
         );
-        source.sendSuccess(() -> Component.literal("Set " + account.id().getPath() + " name to " + value + "."), false);
+        source.sendSuccess(
+                () -> Component.literal("Set " + account.id().getPath() + " name to " + value + " for " + selection.owner().name() + "."),
+                ownerArgument != null
+        );
         return 1;
     }
 
-    private static int queryIcon(CommandSourceStack source, String rawId) {
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+    private int queryIcon(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
         Identifier iconId = BuiltInRegistries.ITEM.getKey(selection.account().iconItem());
         source.sendSuccess(
                 () -> Component.literal(selection.account().id().getPath() + " icon: " + iconId),
@@ -242,21 +362,24 @@ public final class AccountCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int setIcon(CommandSourceStack source, String rawId, Item value) {
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+    private int setIcon(CommandContext<CommandSourceStack> context, String rawId, Item value) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
         PolyCoinEconomyAccount account = selection.account();
         selection.data().updateAccount(
-                selection.player().getGameProfile(), account.id(), account.displayName(), value, account.currency()
+                selection.owner(), account.id(), account.displayName(), value, account.currency()
         );
         Identifier iconId = BuiltInRegistries.ITEM.getKey(value);
-        source.sendSuccess(() -> Component.literal("Set " + account.id().getPath() + " icon to " + iconId + "."), false);
+        source.sendSuccess(
+                () -> Component.literal("Set " + account.id().getPath() + " icon to " + iconId + " for " + selection.owner().name() + "."),
+                ownerArgument != null
+        );
         return 1;
     }
 
-    private static int queryCurrency(CommandSourceStack source, String rawId) {
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+    private int queryCurrency(CommandContext<CommandSourceStack> context, String rawId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
         source.sendSuccess(
                 () -> Component.literal(selection.account().id().getPath() + " currencyId: "
                         + selection.account().currencyId().getPath()),
@@ -265,9 +388,9 @@ public final class AccountCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int setCurrency(CommandSourceStack source, String rawId, String rawCurrencyId) {
-        AccountSelection selection = findAccount(source, rawId);
-        if (selection == null) return 0;
+    private int setCurrency(CommandContext<CommandSourceStack> context, String rawId, String rawCurrencyId) throws CommandSyntaxException {
+        CommandSourceStack source = context.getSource();
+        AccountSelection selection = findAccount(context, rawId);
         PolyCoinEconomyAccount account = selection.account();
         PolyCoinEconomyCurrency currency = findCurrency(source, selection.data(), rawCurrencyId);
         if (currency == null) return 0;
@@ -283,36 +406,29 @@ public final class AccountCommand extends PolyCoinCommand {
         }
 
         selection.data().updateAccount(
-                selection.player().getGameProfile(), account.id(), account.displayName(), account.iconItem(), currency
+                selection.owner(), account.id(), account.displayName(), account.iconItem(), currency
         );
         source.sendSuccess(
                 () -> Component.literal("Set " + account.id().getPath() + " currencyId to "
-                        + currency.id().getPath() + "."),
-                false
+                        + currency.id().getPath() + " for " + selection.owner().name() + "."),
+                ownerArgument != null
         );
         return 1;
     }
 
-    private static @Nullable AccountSelection findAccount(CommandSourceStack source, String rawId) {
-        ServerPlayer player = requirePlayer(source);
-        if (player == null) return null;
-        Identifier id = parseAccountId(source, rawId);
-        if (id == null) return null;
-
-        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyAccount account = findAccount(source, player, id);
-        return account == null ? null : new AccountSelection(player, data, account);
+    private AccountSelection findAccount(
+            CommandContext<CommandSourceStack> context, String rawId
+    ) throws CommandSyntaxException {
+        GameProfile owner = AccountArgument.getOwner(context, ownerArgument);
+        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
+        return new AccountSelection(owner, data, AccountArgument.getAccount(data, owner, rawId));
     }
 
-    private static @Nullable PolyCoinEconomyAccount findAccount(
-            CommandSourceStack source,
-            ServerPlayer player,
-            Identifier id
-    ) {
-        PolyCoinEconomyAccount account = PolyCoin.INSTANCE.getData(source.getServer())
-                .getAccount(player.getGameProfile(), id.getPath());
-        if (account == null) source.sendFailure(Component.literal("Unknown account: " + id.getPath()));
-        return account;
+    private String deletionCommand(GameProfile owner, Identifier id) {
+        String prefix = ownerArgument == null
+                ? "/" + PolyCoin.MOD_ID + " account"
+                : "/" + PolyCoin.MOD_ID + " admin account " + owner.name();
+        return prefix + " delete " + id.getPath() + " confirm";
     }
 
     private static @Nullable PolyCoinEconomyCurrency findCurrency(
@@ -331,22 +447,8 @@ public final class AccountCommand extends PolyCoinCommand {
         return currency;
     }
 
-    private static @Nullable Identifier parseAccountId(CommandSourceStack source, String rawId) {
-        Identifier id = PolyCoinIdentifierArgument.parse(rawId);
-        if (id == null) {
-            source.sendFailure(Component.literal("Invalid account id. Use a PolyCoin id such as savings or polycoin:savings."));
-        }
-        return id;
-    }
-
-    private static @Nullable ServerPlayer requirePlayer(CommandSourceStack source) {
-        ServerPlayer player = source.getPlayer();
-        if (player == null) source.sendFailure(Component.literal("This command can only be executed by a player."));
-        return player;
-    }
-
     private record AccountSelection(
-            ServerPlayer player,
+            GameProfile owner,
             PolyCoinEconomyData data,
             PolyCoinEconomyAccount account
     ) {}

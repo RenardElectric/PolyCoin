@@ -2,6 +2,7 @@ package polycube.polycoin.commands;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.EntityArgument;
@@ -11,9 +12,9 @@ import net.minecraft.server.permissions.PermissionLevel;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
+import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyData;
-import polycube.polycoin.util.Helpers;
 
 import java.math.BigInteger;
 
@@ -96,7 +97,7 @@ public final class PayCommand extends PolyCoinCommand {
         );
     }
 
-    private int pay(CommandSourceStack source, ServerPlayer target, String rawAmount, @Nullable String sourceAccountId, @Nullable String targetAccountId) {
+    private int pay(CommandSourceStack source, ServerPlayer target, String rawAmount, @Nullable String sourceAccountId, @Nullable String targetAccountId) throws CommandSyntaxException {
         var sender = source.getPlayer();
         if (sender == null) {
             source.sendFailure(Component.literal("This command can only be executed by a player."));
@@ -118,25 +119,7 @@ public final class PayCommand extends PolyCoinCommand {
             return 0;
         }
 
-        BigInteger amount;
-
-        try {
-            amount = senderAccount.currency().parseValue(rawAmount);
-        } catch (NumberFormatException exception) {
-            source.sendFailure(Component.literal("Invalid amount: " + rawAmount));
-            return 0;
-        }
-
-        if (amount.signum() <= 0) {
-            source.sendFailure(Component.literal("The amount must be greater than zero."));
-            return 0;
-        }
-
-        var debitCheck = senderAccount.canDecreaseBalance(amount);
-        if (debitCheck.isFailure()) {
-            source.sendFailure(debitCheck.message());
-            return 0;
-        }
+        BigInteger amount = AmountArgument.parse(rawAmount, false);
 
         PolyCoinEconomyAccount targetAccount = findTargetAccount(data, target, targetAccountId, senderAccount);
         if (targetAccount == null) {
@@ -147,33 +130,9 @@ public final class PayCommand extends PolyCoinCommand {
             return 0;
         }
 
-        if (!Helpers.isSameCurrency(senderAccount.currency(), targetAccount.currency())) {
-            source.sendFailure(Component.literal("The source and target accounts use different currencies."));
-            return 0;
-        }
-
-        var creditCheck = targetAccount.canIncreaseBalance(amount);
-        if (creditCheck.isFailure()) {
-            source.sendFailure(creditCheck.message());
-            return 0;
-        }
-
-        var debit = senderAccount.decreaseBalance(amount);
-        if (debit.isFailure()) {
-            source.sendFailure(debit.message());
-            return 0;
-        }
-
-        var credit = targetAccount.increaseBalance(amount);
-        if (credit.isFailure()) {
-            var rollback = senderAccount.increaseBalance(amount);
-            if (rollback.isFailure()) {
-                PolyCoin.LOGGER.error(
-                        "Failed to roll back payment of {} from {} to {}",
-                        amount, sender.getUUID(), target.getUUID()
-                );
-            }
-            source.sendFailure(credit.message());
+        var result = data.transfer(senderAccount, targetAccount, amount);
+        if (!result.successful()) {
+            source.sendFailure(result.message());
             return 0;
         }
 
@@ -182,16 +141,12 @@ public final class PayCommand extends PolyCoinCommand {
                 () -> Component.literal("Paid ")
                         .append(target.getDisplayName())
                         .append(" ")
-                        .append(formattedAmount)
-                        .append(" ")
-                        .append(senderAccount.currency().name()),
+                        .append(formattedAmount),
                 false
         );
         target.sendSystemMessage(
                 Component.literal("Received ")
                         .append(formattedAmount)
-                        .append(" ")
-                        .append(targetAccount.currency().name())
                         .append(" from ")
                         .append(sender.getDisplayName())
         );

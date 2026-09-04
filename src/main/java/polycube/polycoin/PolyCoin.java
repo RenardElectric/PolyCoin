@@ -8,6 +8,7 @@ import polycube.polycoin.economy.PolyCoinEconomyProvider;
 import polycube.polycoin.commands.BalanceCommand;
 import polycube.polycoin.commands.BalanceTopCommand;
 import polycube.polycoin.commands.AccountCommand;
+import polycube.polycoin.commands.AdminCommand;
 import polycube.polycoin.commands.CurrencyCommand;
 import polycube.polycoin.commands.HelpCommand;
 import polycube.polycoin.commands.PayCommand;
@@ -28,6 +29,7 @@ public class PolyCoin implements ModInitializer {
         PolyCoinCommand[] commands = {
                 new HelpCommand(),
                 new AccountCommand(),
+                new AdminCommand(),
                 new BalanceCommand(),
                 new BalanceTopCommand(),
                 new CurrencyCommand(),

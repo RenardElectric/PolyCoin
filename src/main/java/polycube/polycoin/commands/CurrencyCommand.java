@@ -20,6 +20,7 @@ import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
 import java.math.BigInteger;
+import java.util.TreeMap;
 
 public final class CurrencyCommand extends PolyCoinCommand {
     private static final String ID_ARGUMENT = "currency";
@@ -27,18 +28,65 @@ public final class CurrencyCommand extends PolyCoinCommand {
     public CurrencyCommand() {
         super(
                 "currency",
-                "Creates, deletes, inspects, and modifies currencies",
-                "create <id> <name> <icon> <default_balance> | delete <id> [confirm] | modify <id> <name|icon|default_balance> [value]",
-                PermissionLevel.GAMEMASTERS
+                "Lists and inspects currencies; create, delete, and modify are admin-only",
+                "list | info <id> | create <id> <name> <icon> <default_balance> | delete <id> [confirm] | modify <id> <name|icon|default_balance> [value]",
+                PermissionLevel.ALL
         );
     }
 
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name, CommandBuildContext buildContext) {
         return super.getCommand(name, buildContext)
-                .then(createCommand(buildContext))
-                .then(deleteCommand())
-                .then(modifyCommand(buildContext));
+                .then(Commands.literal("list").executes(context -> listCurrencies(context.getSource())))
+                .then(Commands.literal("info").then(
+                        Commands.argument(ID_ARGUMENT, StringArgumentType.word())
+                                .suggests(CurrencyArgument::suggestCurrencies)
+                                .executes(context -> showCurrencyInfo(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, ID_ARGUMENT)
+                                ))
+                ))
+                .then(createCommand(buildContext).requires(this::canManageCurrencies))
+                .then(deleteCommand().requires(this::canManageCurrencies))
+                .then(modifyCommand(buildContext).requires(this::canManageCurrencies));
+    }
+
+    private boolean canManageCurrencies(CommandSourceStack source) {
+        return hasPermission(source, PermissionLevel.GAMEMASTERS);
+    }
+
+    private static int listCurrencies(CommandSourceStack source) {
+        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
+        var currencies = new TreeMap<>(data.getCurrencies());
+        var message = Component.literal("Currencies (" + currencies.size() + "):");
+
+        if (currencies.isEmpty()) {
+            message.append("\nNo currencies found.");
+        } else {
+            for (PolyCoinEconomyCurrency currency : currencies.values()) {
+                message.append("\n- " + currency.id().getPath() + " - ").append(currency.name());
+                if (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id())) {
+                    message.append(" (main)");
+                }
+            }
+        }
+
+        source.sendSuccess(() -> message, false);
+        return 1;
+    }
+
+    private static int showCurrencyInfo(CommandSourceStack source, String rawId) {
+        PolyCoinEconomyCurrency currency = findCurrency(source, rawId);
+        if (currency == null) return 0;
+
+        var message = Component.literal("Currency: " + currency.id())
+                .append("\nName: ").append(currency.name())
+                .append("\nIcon: " + BuiltInRegistries.ITEM.getKey(currency.iconItem()))
+                .append("\nDefault balance: ").append(currency.formatValueComponent(currency.defaultBalance(), true))
+                .append("\nMain currency: " + (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id()) ? "yes" : "no"));
+
+        source.sendSuccess(() -> message, false);
+        return 1;
     }
 
     private static ArgumentBuilder<CommandSourceStack, ?> createCommand(CommandBuildContext buildContext) {

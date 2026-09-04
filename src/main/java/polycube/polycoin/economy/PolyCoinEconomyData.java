@@ -325,6 +325,50 @@ public final class PolyCoinEconomyData extends SavedData {
         return Collections.unmodifiableMap(currencies);
     }
 
+    public record TransferResult(boolean successful, Component message) {}
+
+    public synchronized TransferResult transfer(
+            PolyCoinEconomyAccount source, PolyCoinEconomyAccount target, BigInteger amount
+    ) {
+        Objects.requireNonNull(source, "source");
+        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(amount, "amount");
+        if (amount.signum() <= 0) {
+            return new TransferResult(false, Component.literal("The amount must be greater than zero."));
+        }
+        if (source == target) {
+            return new TransferResult(false, Component.literal("The source and target accounts must be different."));
+        }
+        if (!isManagedAccount(source) || !isManagedAccount(target)) {
+            return new TransferResult(false, Component.literal("An account no longer exists in this economy."));
+        }
+
+        // The data lock serializes transfers and account deletion/metadata changes.
+        // Account locks also exclude balance changes made through the economy API.
+        synchronized (source) {
+            synchronized (target) {
+                if (!source.usesCurrency(target.currencyId())) {
+                    return new TransferResult(false, Component.literal("The source and target accounts use different currencies."));
+                }
+                var debit = source.canDecreaseBalance(amount);
+                if (debit.isFailure()) return new TransferResult(false, debit.message());
+                var credit = target.canIncreaseBalance(amount);
+                if (credit.isFailure()) return new TransferResult(false, credit.message());
+
+                // Both balances are validated before either changes; the locks keep
+                // these final values valid until both writes have completed.
+                source.setBalance(debit.finalBalance());
+                target.setBalance(credit.finalBalance());
+                return new TransferResult(true, Component.literal("Transfer successful."));
+            }
+        }
+    }
+
+    private boolean isManagedAccount(PolyCoinEconomyAccount account) {
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(account.owner());
+        return playerAccounts != null && playerAccounts.get(account.id().getPath()) == account;
+    }
+
     public @Nullable PolyCoinEconomyCurrency getCurrency(String currencyId) {
         Objects.requireNonNull(currencyId, "currencyId");
         return currencies.get(currencyId);
