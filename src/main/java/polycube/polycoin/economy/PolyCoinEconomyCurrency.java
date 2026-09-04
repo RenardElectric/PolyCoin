@@ -52,7 +52,7 @@ public final class PolyCoinEconomyCurrency
     private final BigInteger defaultBalance;
 
     public PolyCoinEconomyCurrency(Identifier id, String name, Item icon, BigInteger defaultBalance) {
-        this.id = requirePolyCoinIdentifier(id);
+        this.id = Helpers.requirePolyCoinIdentifier(id, "currencyId");
         this.name = Objects.requireNonNull(name, "name");
         this.icon = Objects.requireNonNull(icon, "icon");
         this.defaultBalance = requireNonNegative(defaultBalance, "defaultBalance");
@@ -129,14 +129,6 @@ public final class PolyCoinEconomyCurrency
             result.initCause(exception);
             throw result;
         }
-    }
-
-    private static Identifier requirePolyCoinIdentifier(Identifier id) {
-        Objects.requireNonNull(id, "id");
-        if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
-            throw new IllegalArgumentException("Currency id must use namespace '" + PolyCoin.MOD_ID + "': " + id);
-        }
-        return id;
     }
 
     private static BigInteger requireNonNegative(BigInteger value, String name) {

@@ -15,6 +15,7 @@ import net.minecraft.world.item.Item;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.CurrencyArgument;
+import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
@@ -121,7 +122,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
             CommandSourceStack source, String rawId,
             String name, Item icon, String rawDefaultBalance
     ) {
-        Identifier id = parseCurrencyId(rawId);
+        Identifier id = PolyCoinIdentifierArgument.parse(rawId);
         if (id == null) {
             source.sendFailure(Component.literal("Invalid currency id. Use a PolyCoin id such as coins or polycoin:coins."));
             return 0;
@@ -294,7 +295,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
             PolyCoinEconomyData data,
             String rawId
     ) {
-        Identifier id = parseCurrencyId(rawId);
+        Identifier id = PolyCoinIdentifierArgument.parse(rawId);
         if (id == null) {
             source.sendFailure(Component.literal("Invalid currency id: " + rawId));
             return null;
@@ -305,10 +306,4 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return currency;
     }
 
-    private static @Nullable Identifier parseCurrencyId(String rawId) {
-        String id = rawId.indexOf(':') < 0 ? PolyCoin.MOD_ID + ":" + rawId : rawId;
-        Identifier parsed = Identifier.tryParse(id);
-        if (parsed == null || !PolyCoin.MOD_ID.equals(parsed.getNamespace())) return null;
-        return parsed;
-    }
 }

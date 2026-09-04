@@ -4,8 +4,11 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import eu.pb4.common.economy.api.EconomyAccount;
 import eu.pb4.common.economy.api.EconomyCurrency;
+import net.minecraft.resources.Identifier;
+import polycube.polycoin.PolyCoin;
 
 import java.math.BigInteger;
+import java.util.Objects;
 
 public final class Helpers {
     private Helpers() {}
@@ -29,4 +32,12 @@ public final class Helpers {
                     },
                     BigInteger::toString
             );
+
+    public static Identifier requirePolyCoinIdentifier(Identifier id, String name) {
+        Objects.requireNonNull(id, name);
+        if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
+            throw new IllegalArgumentException(name + " must use namespace '" + PolyCoin.MOD_ID + "': " + id);
+        }
+        return id;
+    }
 }

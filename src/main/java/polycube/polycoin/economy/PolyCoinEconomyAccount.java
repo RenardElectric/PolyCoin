@@ -44,13 +44,13 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
             ).apply(instance, PolyCoinEconomyAccount::new));
 
     private final Identifier id;
-    private final Identifier currencyId;
+    private volatile Identifier currencyId;
 
     private BigInteger balance;
 
     private final UUID owner;
-    private final String name;
-    private final Item icon;
+    private volatile String name;
+    private volatile Item icon;
 
     private volatile @Nullable PolyCoinEconomyData data;
 
@@ -58,13 +58,13 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
             Identifier id, Identifier currencyId, BigInteger balance,
             UUID owner, String name, Item icon
     ) {
-        this.id = requirePolyCoinIdentifier(id, "id");
-        this.currencyId = requirePolyCoinIdentifier(currencyId, "currencyId");
+        this.id = Helpers.requirePolyCoinIdentifier(id, "id");
+        this.currencyId = Helpers.requirePolyCoinIdentifier(currencyId, "currencyId");
 
         this.balance = requireNonNegative(balance, "balance");
 
         this.owner = Objects.requireNonNull(owner, "owner");
-        this.name = Objects.requireNonNull(name, "name");
+        this.name = requireNonBlank(name, "name");
         this.icon = Objects.requireNonNull(icon, "icon");
     }
 
@@ -80,6 +80,37 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         this.data = data;
     }
 
+    synchronized void detach(PolyCoinEconomyData data) {
+        if (this.data != data) {
+            throw new IllegalStateException("Account " + id + " is not attached to the expected economy data instance");
+        }
+        this.data = null;
+    }
+
+    synchronized void updateMetadata(Identifier currencyId, String name, Item icon) {
+        PolyCoinEconomyData data = requireData();
+        Identifier validatedCurrencyId = Helpers.requirePolyCoinIdentifier(currencyId, "currencyId");
+        String validatedName = requireNonBlank(name, "name");
+        Item validatedIcon = Objects.requireNonNull(icon, "icon");
+
+        if (data.getCurrency(validatedCurrencyId) == null) {
+            throw new IllegalArgumentException("Unknown currency: " + validatedCurrencyId);
+        }
+        if (!this.currencyId.equals(validatedCurrencyId) && balance.signum() != 0) {
+            throw new IllegalStateException("An account balance must be zero before its currency can be changed");
+        }
+        if (this.currencyId.equals(validatedCurrencyId)
+                && this.name.equals(validatedName)
+                && this.icon == validatedIcon) {
+            return;
+        }
+
+        this.currencyId = validatedCurrencyId;
+        this.name = validatedName;
+        this.icon = validatedIcon;
+        data.setDirty();
+    }
+
     private PolyCoinEconomyData requireData() {
         PolyCoinEconomyData data = this.data;
         if (data == null) {
@@ -92,8 +123,16 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         return this.currencyId.equals(currencyId);
     }
 
-    Identifier currencyId() {
+    public Identifier currencyId() {
         return currencyId;
+    }
+
+    public String displayName() {
+        return name;
+    }
+
+    public Item iconItem() {
+        return icon;
     }
 
     @Override
@@ -213,20 +252,17 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         return icon.getDefaultInstance();
     }
 
-    private static Identifier requirePolyCoinIdentifier(Identifier id, String name) {
-        Objects.requireNonNull(id, name);
-        if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
-            throw new IllegalArgumentException(name + " must use namespace '" + PolyCoin.MOD_ID + "': " + id);
-        }
-
-        return id;
-    }
-
     private static BigInteger requireNonNegative(BigInteger value, String name) {
         Objects.requireNonNull(value, name);
         if (value.signum() < 0) {
             throw new IllegalArgumentException(name + " cannot be negative: " + value);
         }
+        return value;
+    }
+
+    private static String requireNonBlank(String value, String name) {
+        Objects.requireNonNull(value, name);
+        if (value.isBlank()) throw new IllegalArgumentException(name + " cannot be blank");
         return value;
     }
 }
