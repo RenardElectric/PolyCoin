@@ -23,8 +23,10 @@ public final class PolyCoinCommands {
             var baseCommand = Commands.literal(PolyCoin.MOD_ID);
             baseCommand.executes(context -> printModInfo(context.getSource()));
             for (PolyCoinCommand command : commands) {
-                baseCommand.then(command.getCommand());
-                if (command.hasAlias()) dispatcher.register(command.getCommand());
+                for (var commandAlias : command.getCommands()) {
+                    baseCommand.then(commandAlias);
+                    if (command.hasQuickAlias()) dispatcher.register(commandAlias);
+                }
             }
             dispatcher.register(baseCommand);
             PolyCoin.LOGGER.debug("Registered {} PolyCoin subcommand(s)", commands.length);

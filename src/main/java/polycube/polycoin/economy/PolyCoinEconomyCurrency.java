@@ -14,6 +14,7 @@ import polycube.polycoin.util.Helpers;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
+import java.util.Objects;
 import java.util.regex.Pattern;
 
 public final class PolyCoinEconomyCurrency
@@ -52,8 +53,8 @@ public final class PolyCoinEconomyCurrency
 
     public PolyCoinEconomyCurrency(Identifier id, String name, Item icon, BigInteger defaultBalance) {
         this.id = requirePolyCoinIdentifier(id);
-        this.name = name;
-        this.icon = icon;
+        this.name = Objects.requireNonNull(name, "name");
+        this.icon = Objects.requireNonNull(icon, "icon");
         this.defaultBalance = requireNonNegative(defaultBalance, "defaultBalance");
     }
 
@@ -82,7 +83,13 @@ public final class PolyCoinEconomyCurrency
     }
 
     @Override
+    public Component formatValueComponent(BigInteger value, boolean precise) {
+        return Component.literal(formatValue(value, precise) + " ").append(name());
+    }
+
+    @Override
     public String formatValue(BigInteger value, boolean precise) {
+        Objects.requireNonNull(value, "value");
         // We currently display the exact two-decimal representation in both modes.
         // Raw: 123456
         // Displayed: 1234.56
@@ -91,6 +98,7 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public BigInteger parseValue(String value) throws NumberFormatException {
+        Objects.requireNonNull(value, "value");
         String input = value.strip();
 
         // BigDecimal itself accepts scientific notation. For a player
@@ -112,6 +120,7 @@ public final class PolyCoinEconomyCurrency
     }
 
     private static Identifier requirePolyCoinIdentifier(Identifier id) {
+        Objects.requireNonNull(id, "id");
         if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
             throw new IllegalArgumentException("Currency id must use namespace '" + PolyCoin.MOD_ID + "': " + id);
         }
@@ -119,6 +128,7 @@ public final class PolyCoinEconomyCurrency
     }
 
     private static BigInteger requireNonNegative(BigInteger value, String name) {
+        Objects.requireNonNull(value, name);
         if (value.signum() < 0) {
             throw new IllegalArgumentException(name + " cannot be negative: " + value);
         }

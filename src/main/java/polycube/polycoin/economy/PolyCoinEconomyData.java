@@ -5,6 +5,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import eu.pb4.common.economy.api.EconomyCurrency;
 import net.minecraft.core.UUIDUtil;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
@@ -12,11 +13,25 @@ import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
+import polycube.polycoin.util.Helpers;
 
 import java.math.BigInteger;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PolyCoinEconomyData extends SavedData {
+
+    public record LeaderboardEntry(
+            UUID owner,
+            Identifier accountId,
+            Component accountName,
+            BigInteger balance
+    ) {}
+
+    private static final Comparator<LeaderboardEntry> LEADERBOARD_ORDER =
+            Comparator.comparing(LeaderboardEntry::balance).reversed()
+                    .thenComparing(entry -> entry.owner().toString())
+                    .thenComparing(entry -> entry.accountId().toString());
 
     public static final Codec<Map<String, PolyCoinEconomyCurrency>> CURRENCIES_CODEC = Codec.unboundedMap(Codec.STRING, PolyCoinEconomyCurrency.CODEC);
 
@@ -42,7 +57,7 @@ public final class PolyCoinEconomyData extends SavedData {
     public static final BigInteger DEFAULT_BALANCE = BigInteger.valueOf(100_000L); // 1000.00
     public static final Item MAIN_CURRENCY_ICON = Items.NETHER_STAR;
     public static final Item MAIN_ACCOUNT_ICON = Items.NETHER_STAR;
-    public static final Identifier MAIN_CURRENCY_ID = Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "main_currency");
+    public static final Identifier MAIN_CURRENCY_ID = Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "polycoin");
     public static final Identifier MAIN_ACCOUNT_ID = Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "main_account");
     public static final String MAIN_CURRENCY_KEY = MAIN_CURRENCY_ID.getPath();
     public static final String MAIN_ACCOUNT_KEY = MAIN_ACCOUNT_ID.getPath();
@@ -51,13 +66,16 @@ public final class PolyCoinEconomyData extends SavedData {
     private final Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts;
 
     public PolyCoinEconomyData(Map<String, PolyCoinEconomyCurrency> currencies, Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts) {
+        Objects.requireNonNull(currencies, "currencies");
+        Objects.requireNonNull(accounts, "accounts");
+
         this.currencies = new HashMap<>(currencies.size() + 1);
-        this.accounts = new HashMap<>(accounts.size());
+        this.accounts = new ConcurrentHashMap<>(accounts.size());
 
         // Validate and copy currencies.
         for (var entry : currencies.entrySet()) {
-            String key = entry.getKey();
-            PolyCoinEconomyCurrency currency = entry.getValue();
+            String key = Objects.requireNonNull(entry.getKey(), "currency map key");
+            PolyCoinEconomyCurrency currency = Objects.requireNonNull(entry.getValue(), "currency");
 
             if (!key.equals(currency.id().getPath())) {
                 throw new IllegalStateException("Currency key '" + key + "' does not match currency id '" + currency.id() + "'");
@@ -69,26 +87,26 @@ public final class PolyCoinEconomyData extends SavedData {
         }
 
         // Main currency must exist before accounts are attached.
-        this.currencies.computeIfAbsent(
-                MAIN_CURRENCY_KEY,
-                _ -> {
-                    setDirty();
-                    return new PolyCoinEconomyCurrency(
+        if (!this.currencies.containsKey(MAIN_CURRENCY_KEY)) {
+            this.currencies.put(
+                    MAIN_CURRENCY_KEY,
+                    new PolyCoinEconomyCurrency(
                             MAIN_CURRENCY_ID, "polycoins",
                             MAIN_CURRENCY_ICON, DEFAULT_BALANCE
-                    );
-                }
-        );
+                    )
+            );
+            setDirty();
+        }
 
         // Validate, deep-copy and attach accounts.
         for (var ownerEntry : accounts.entrySet()) {
-            UUID owner = ownerEntry.getKey();
-            Map<String, PolyCoinEconomyAccount> storedAccounts = ownerEntry.getValue();
-            Map<String, PolyCoinEconomyAccount> playerAccounts = new HashMap<>(storedAccounts.size());
+            UUID owner = Objects.requireNonNull(ownerEntry.getKey(), "account owner");
+            Map<String, PolyCoinEconomyAccount> storedAccounts = Objects.requireNonNull(ownerEntry.getValue(), "accounts for " + owner);
+            Map<String, PolyCoinEconomyAccount> playerAccounts = new ConcurrentHashMap<>(storedAccounts.size());
 
             for (var entry : storedAccounts.entrySet()) {
-                String key = entry.getKey();
-                PolyCoinEconomyAccount account = entry.getValue();
+                String key = Objects.requireNonNull(entry.getKey(), "account map key");
+                PolyCoinEconomyAccount account = Objects.requireNonNull(entry.getValue(), "account");
 
                 if (!owner.equals(account.owner())) {
                     throw new IllegalStateException("Account " + account.id() + " belongs to " + account.owner() + " but is stored under " + owner);
@@ -110,16 +128,108 @@ public final class PolyCoinEconomyData extends SavedData {
     }
 
     public Map<String, PolyCoinEconomyAccount> getAccounts(GameProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        UUID owner = Objects.requireNonNull(profile.id(), "profile id");
+
         // Listing a player's accounts should include their main account.
-        getMainAccount(profile.id());
-        return Collections.unmodifiableMap(accounts.get(profile.id()));
+        getMainAccount(owner);
+        return Collections.unmodifiableMap(accounts.get(owner));
+    }
+
+    public List<String> getAccountIds(GameProfile profile) {
+        Objects.requireNonNull(profile, "profile");
+        UUID owner = Objects.requireNonNull(profile.id(), "profile id");
+        SortedSet<String> accountIds = new TreeSet<>();
+        accountIds.add(MAIN_ACCOUNT_KEY);
+
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(owner);
+        if (playerAccounts != null) {
+            accountIds.addAll(playerAccounts.keySet());
+        }
+
+        return List.copyOf(accountIds);
+    }
+
+    public List<String> getAccountIds(GameProfile profile, EconomyCurrency currency) {
+        Objects.requireNonNull(profile, "profile");
+        UUID owner = Objects.requireNonNull(profile.id(), "profile id");
+        Objects.requireNonNull(currency, "currency");
+        PolyCoinEconomyCurrency canonicalCurrency = getCurrency(currency.id());
+
+        if (canonicalCurrency == null || !Helpers.isSameCurrency(canonicalCurrency, currency)) {
+            return List.of();
+        }
+
+        SortedSet<String> accountIds = new TreeSet<>();
+        if (canonicalCurrency == getMainCurrency()) {
+            accountIds.add(MAIN_ACCOUNT_KEY);
+        }
+
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(owner);
+        if (playerAccounts != null) {
+            for (PolyCoinEconomyAccount account : playerAccounts.values()) {
+                if (account.usesCurrency(canonicalCurrency.id())) {
+                    accountIds.add(account.id().getPath());
+                }
+            }
+        }
+
+        return List.copyOf(accountIds);
+    }
+
+    public @Nullable PolyCoinEconomyCurrency getAccountCurrency(GameProfile profile, String accountId) {
+        Objects.requireNonNull(profile, "profile");
+        UUID owner = Objects.requireNonNull(profile.id(), "profile id");
+        Objects.requireNonNull(accountId, "accountId");
+
+        if (MAIN_ACCOUNT_KEY.equals(accountId)) {
+            return getMainCurrency();
+        }
+
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(owner);
+        if (playerAccounts == null) return null;
+
+        PolyCoinEconomyAccount account = playerAccounts.get(accountId);
+        return account == null ? null : account.currency();
+    }
+
+    public List<LeaderboardEntry> getTopAccounts(PolyCoinEconomyCurrency currency, int limit) {
+        Objects.requireNonNull(currency, "currency");
+        if (limit < 0) throw new IllegalArgumentException("limit cannot be negative: " + limit);
+        if (getCurrency(currency.id()) != currency) {
+            throw new IllegalArgumentException("Currency is not managed by this economy data: " + currency.id());
+        }
+        if (limit == 0) return List.of();
+
+        PriorityQueue<LeaderboardEntry> entries = new PriorityQueue<>(limit, LEADERBOARD_ORDER.reversed());
+        for (Map<String, PolyCoinEconomyAccount> playerAccounts : accounts.values()) {
+            for (PolyCoinEconomyAccount account : playerAccounts.values()) {
+                if (account.usesCurrency(currency.id())) {
+                    LeaderboardEntry entry = new LeaderboardEntry(account.owner(), account.id(), account.name(), account.balance());
+                    if (entries.size() < limit) {
+                        entries.add(entry);
+                    } else if (LEADERBOARD_ORDER.compare(entry, entries.peek()) < 0) {
+                        entries.remove();
+                        entries.add(entry);
+                    }
+                }
+            }
+        }
+
+        List<LeaderboardEntry> result = new ArrayList<>(entries);
+        result.sort(LEADERBOARD_ORDER);
+        return List.copyOf(result);
     }
 
     public @Nullable PolyCoinEconomyAccount getAccount(GameProfile profile, String accountId) {
-        // The default account is created lazily.
-        if (MAIN_ACCOUNT_KEY.equals(accountId)) return getMainAccount(profile.id());
+        Objects.requireNonNull(profile, "profile");
+        Objects.requireNonNull(accountId, "accountId");
+        UUID owner = Objects.requireNonNull(profile.id(), "profile id");
 
-        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(profile.id());
+        // The default account is created lazily.
+        if (MAIN_ACCOUNT_KEY.equals(accountId)) return getMainAccount(owner);
+
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.get(owner);
         if (playerAccounts == null) return null;
 
         return playerAccounts.get(accountId);
@@ -130,17 +240,23 @@ public final class PolyCoinEconomyData extends SavedData {
     }
 
     public @Nullable PolyCoinEconomyCurrency getCurrency(String currencyId) {
+        Objects.requireNonNull(currencyId, "currencyId");
         return currencies.get(currencyId);
     }
 
     public @Nullable PolyCoinEconomyCurrency getCurrency(Identifier currencyId) {
+        Objects.requireNonNull(currencyId, "currencyId");
         if (!PolyCoin.MOD_ID.equals(currencyId.getNamespace())) return null;
         return getCurrency(currencyId.getPath());
     }
 
     public @Nullable String defaultAccount(GameProfile profile, EconomyCurrency currency) {
+        Objects.requireNonNull(profile, "profile");
+        Objects.requireNonNull(profile.id(), "profile id");
+        Objects.requireNonNull(currency, "currency");
+
         PolyCoinEconomyCurrency canonicalCurrency = getCurrency(currency.id());
-        if (canonicalCurrency == null) return null;
+        if (canonicalCurrency == null || !Helpers.isSameCurrency(canonicalCurrency, currency)) return null;
 
         if (canonicalCurrency == getMainCurrency()) return MAIN_ACCOUNT_KEY;
 
@@ -160,28 +276,23 @@ public final class PolyCoinEconomyData extends SavedData {
     }
 
     public PolyCoinEconomyAccount getMainAccount(UUID owner) {
-        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.computeIfAbsent(owner, _ -> new HashMap<>());
+        Objects.requireNonNull(owner, "owner");
+        Map<String, PolyCoinEconomyAccount> playerAccounts = accounts.computeIfAbsent(owner, _ -> new ConcurrentHashMap<>());
 
-        PolyCoinEconomyAccount existing = playerAccounts.get(MAIN_ACCOUNT_KEY);
+        PolyCoinEconomyAccount account = playerAccounts.computeIfAbsent(MAIN_ACCOUNT_KEY, _ -> {
+            PolyCoinEconomyCurrency currency = getMainCurrency();
+            PolyCoinEconomyAccount created = new PolyCoinEconomyAccount(
+                    MAIN_ACCOUNT_ID, currency.id(), currency.defaultBalance(),
+                    owner, "Main Account", MAIN_ACCOUNT_ICON
+            );
+            created.attach(this);
+            setDirty();
+            return created;
+        });
 
-        if (existing != null) {
-            if (!existing.usesCurrency(MAIN_CURRENCY_ID)) {
-                throw new IllegalStateException("Main account for " + owner + " uses unexpected currency " + existing.currencyId());
-            }
-            return existing;
+        if (!account.usesCurrency(MAIN_CURRENCY_ID)) {
+            throw new IllegalStateException("Main account for " + owner + " uses unexpected currency " + account.currencyId());
         }
-
-        PolyCoinEconomyCurrency currency = getMainCurrency();
-
-        PolyCoinEconomyAccount account = new PolyCoinEconomyAccount(
-                MAIN_ACCOUNT_ID, currency.id(), currency.defaultBalance(),
-                owner, "Main Account", MAIN_ACCOUNT_ICON
-        );
-
-        account.attach(this);
-        playerAccounts.put(MAIN_ACCOUNT_KEY, account);
-        setDirty();
-
         return account;
     }
 
@@ -192,4 +303,5 @@ public final class PolyCoinEconomyData extends SavedData {
         }
         return currency;
     }
+
 }

@@ -9,15 +9,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.saveddata.SavedData;
 import org.jspecify.annotations.Nullable;
-import polycube.polycoin.PolyCoin;
 
-import java.util.*;
+import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 
-public class PolyCoinEconomyProvider extends SavedData implements EconomyProvider {
-
-    private final Map<MinecraftServer, PolyCoinEconomyData> serverData = new HashMap<>();
+public final class PolyCoinEconomyProvider implements EconomyProvider {
 
     @Override
     public Component name() {
@@ -55,27 +53,7 @@ public class PolyCoinEconomyProvider extends SavedData implements EconomyProvide
     }
 
     public PolyCoinEconomyData getData(MinecraftServer server) {
-        return serverData.get(server);
-    }
-
-    public void load(MinecraftServer server) {
-        if (serverData.containsKey(server)) {
-            PolyCoin.LOGGER.warn("PolyCoin economy provider already loaded for this server, skipping load");
-            return;
-        }
-        PolyCoin.LOGGER.debug("Loading PolyCoin economy provider");
-        var polyCoinEconomyProvider = server.getDataStorage().computeIfAbsent(PolyCoinEconomyData.TYPE);
-        serverData.put(server, polyCoinEconomyProvider);
-        PolyCoin.LOGGER.debug("Loaded PolyCoin economy provider");
-    }
-
-    public void unload(MinecraftServer server) {
-        if (!serverData.containsKey(server)) {
-            PolyCoin.LOGGER.warn("PolyCoin economy provider not loaded for this server, skipping unload");
-            return;
-        }
-        PolyCoin.LOGGER.debug("Unloading PolyCoin economy provider");
-        serverData.remove(server);
-        PolyCoin.LOGGER.debug("Unloaded PolyCoin economy provider");
+        Objects.requireNonNull(server, "server");
+        return server.getDataStorage().computeIfAbsent(PolyCoinEconomyData.TYPE);
     }
 }

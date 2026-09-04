@@ -33,6 +33,7 @@ dependencies {
     implementation "net.fabricmc:fabric-loader:${loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
     implementation "eu.pb4:common-economy-api:${common_economy_api_version}"
+    include "eu.pb4:common-economy-api:${common_economy_api_version}"
 }
 
 processResources {

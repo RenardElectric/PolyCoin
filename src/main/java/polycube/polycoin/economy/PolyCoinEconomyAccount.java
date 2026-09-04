@@ -16,6 +16,7 @@ import polycube.polycoin.PolyCoin;
 import polycube.polycoin.util.Helpers;
 
 import java.math.BigInteger;
+import java.util.Objects;
 import java.util.UUID;
 
 public final class PolyCoinEconomyAccount implements EconomyAccount {
@@ -36,7 +37,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
             RecordCodecBuilder.create(instance -> instance.group(
                     POLYCOIN_IDENTIFIER_CODEC.fieldOf("id").forGetter(account -> account.id),
                     POLYCOIN_IDENTIFIER_CODEC.fieldOf("currency").forGetter(account -> account.currencyId),
-                    BALANCE_CODEC.fieldOf("balance").forGetter(account -> account.balance),
+                    BALANCE_CODEC.fieldOf("balance").forGetter(PolyCoinEconomyAccount::balance),
                     UUIDUtil.STRING_CODEC.fieldOf("owner").forGetter(account -> account.owner),
                     Codec.STRING.fieldOf("name").forGetter(account -> account.name),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(account -> account.icon)
@@ -51,7 +52,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     private final String name;
     private final Item icon;
 
-    private @Nullable PolyCoinEconomyData data;
+    private volatile @Nullable PolyCoinEconomyData data;
 
     public PolyCoinEconomyAccount(
             Identifier id, Identifier currencyId, BigInteger balance,
@@ -62,12 +63,14 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
         this.balance = requireNonNegative(balance, "balance");
 
-        this.owner = owner;
-        this.name = name;
-        this.icon = icon;
+        this.owner = Objects.requireNonNull(owner, "owner");
+        this.name = Objects.requireNonNull(name, "name");
+        this.icon = Objects.requireNonNull(icon, "icon");
     }
 
-    void attach(PolyCoinEconomyData data) {
+    synchronized void attach(PolyCoinEconomyData data) {
+        Objects.requireNonNull(data, "data");
+
         if (this.data != null && this.data != data) {
             throw new IllegalStateException("Account " + id + " is already attached to another economy data instance");
         }
@@ -109,12 +112,13 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     @Override
-    public BigInteger balance() {
+    public synchronized BigInteger balance() {
         return balance;
     }
 
     @Override
-    public EconomyTransaction canIncreaseBalance(BigInteger value) {
+    public synchronized EconomyTransaction canIncreaseBalance(BigInteger value) {
+        Objects.requireNonNull(value, "value");
         BigInteger current = balance;
 
         if (value.signum() < 0) {
@@ -131,7 +135,8 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     @Override
-    public EconomyTransaction canDecreaseBalance(BigInteger value) {
+    public synchronized EconomyTransaction canDecreaseBalance(BigInteger value) {
+        Objects.requireNonNull(value, "value");
         BigInteger current = balance;
 
         if (value.signum() < 0) {
@@ -155,7 +160,30 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     @Override
-    public void setBalance(BigInteger value) {
+    public synchronized EconomyTransaction increaseBalance(BigInteger value) {
+        EconomyTransaction transaction = canIncreaseBalance(value);
+        if (transaction.isSuccessful()) {
+            setBalance(transaction.finalBalance());
+        }
+        return transaction;
+    }
+
+    @Override
+    public synchronized EconomyTransaction decreaseBalance(BigInteger value) {
+        EconomyTransaction transaction = canDecreaseBalance(value);
+        if (transaction.isSuccessful()) {
+            setBalance(transaction.finalBalance());
+        }
+        return transaction;
+    }
+
+    @Override
+    public EconomyTransaction decreaseBalance(long value) {
+        return decreaseBalance(BigInteger.valueOf(value));
+    }
+
+    @Override
+    public synchronized void setBalance(BigInteger value) {
         requireNonNegative(value, "value");
 
         // An account that isn't attached cannot be persisted safely.
@@ -186,6 +214,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     private static Identifier requirePolyCoinIdentifier(Identifier id, String name) {
+        Objects.requireNonNull(id, name);
         if (!PolyCoin.MOD_ID.equals(id.getNamespace())) {
             throw new IllegalArgumentException(name + " must use namespace '" + PolyCoin.MOD_ID + "': " + id);
         }
@@ -194,6 +223,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     private static BigInteger requireNonNegative(BigInteger value, String name) {
+        Objects.requireNonNull(value, name);
         if (value.signum() < 0) {
             throw new IllegalArgumentException(name + " cannot be negative: " + value);
         }
