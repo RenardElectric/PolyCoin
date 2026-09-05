@@ -8,7 +8,7 @@ import polycube.polycoin.economy.PolyCoinEconomyProvider;
 import polycube.polycoin.commands.BalanceCommand;
 import polycube.polycoin.commands.BalanceTopCommand;
 import polycube.polycoin.commands.AccountCommand;
-import polycube.polycoin.commands.AdminCommand;
+import polycube.polycoin.commands.AsCommand;
 import polycube.polycoin.commands.CurrencyCommand;
 import polycube.polycoin.commands.HelpCommand;
 import polycube.polycoin.commands.PayCommand;
@@ -26,14 +26,17 @@ public class PolyCoin implements ModInitializer {
         LOGGER.info("Initializing PolyCoin");
         CommonEconomy.register(MOD_ID, INSTANCE);
 
+        var account = new AccountCommand();
+        var balance = new BalanceCommand();
+        var pay = new PayCommand();
         PolyCoinCommand[] commands = {
                 new HelpCommand(),
-                new AccountCommand(),
-                new AdminCommand(),
-                new BalanceCommand(),
+                account,
+                new AsCommand(account, balance, pay),
+                balance,
                 new BalanceTopCommand(),
                 new CurrencyCommand(),
-                new PayCommand()
+                pay
         };
         PolyCoinCommands.registerCommands(commands);
     }

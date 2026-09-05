@@ -2,6 +2,8 @@ package polycube.polycoin.commands;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -9,58 +11,78 @@ import net.minecraft.server.permissions.PermissionLevel;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
-import polycube.polycoin.economy.PolyCoinEconomyAccount;
+import polycube.polycoin.commands.commandArguments.AmountArgument;
+import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 
-public class BalanceCommand extends PolyCoinCommand {
+import java.util.Locale;
+
+public final class BalanceCommand extends PolyCoinCommand {
+    private enum BalanceOperation { SET, ADD, REMOVE }
+
     public BalanceCommand() {
-        super(
-                "balance",
-                "Displays the balance of the player",
-                "[account]",
-                PermissionLevel.ALL,
-                true
-        );
+        super("balance", "Displays a player's balance; set, add, and remove are admin-only",
+                "[account] [<set|add|remove> <amount>]", PermissionLevel.ALL, true);
     }
 
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name) {
-        return super.getCommand(name).then(
-                Commands.argument("account", StringArgumentType.word())
-                        .suggests(AccountArgument::suggestAccounts)
-                        .executes(context -> showBalance(
-                                context.getSource(),
-                                StringArgumentType.getString(context, "account")
-                        ))
-        );
+        var command = super.getCommand(name).executes(context -> showBalance(context, null));
+        var account = Commands.argument("account", StringArgumentType.string())
+                .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, "set", "add", "remove"))
+                .executes(context -> showBalance(context, StringArgumentType.getString(context, "account")));
+        for (BalanceOperation operation : BalanceOperation.values()) {
+            var adjustment = Commands.literal(operation.name().toLowerCase(Locale.ROOT))
+                    .requires(source -> hasPermission(source, PermissionLevel.GAMEMASTERS))
+                    .then(Commands.argument("amount", StringArgumentType.word())
+                            .executes(context -> adjustBalance(context, operation)));
+            account.then(adjustment);
+            command.then(adjustment);
+        }
+        return command.then(account);
     }
 
-    @Override
-    protected int execute(CommandSourceStack source) {
-        return showBalance(source, null);
+    private static int showBalance(CommandContext<CommandSourceStack> context, @Nullable String accountId) throws CommandSyntaxException {
+        var source = context.getSource();
+        var owner = AccountArgument.getOwner(context);
+        var data = PolyCoin.INSTANCE.getData(source.getServer());
+        var account = AccountArgument.getAccount(data, owner, accountId);
+        var message = Component.literal(owner.name() + " - " + account.id().getPath() + " - ")
+                .append(account.name()).append(" balance: ").append(account.formattedBalance());
+        source.sendSuccess(() -> message, false);
+        return 1;
     }
 
-    private int showBalance(CommandSourceStack source, @Nullable String accountId) {
-        var player = source.getPlayer();
-        if (player == null) {
-            source.sendFailure(Component.literal("This command can only be executed by a player."));
-            return 0;
+    private static int adjustBalance(CommandContext<CommandSourceStack> context, BalanceOperation operation) throws CommandSyntaxException {
+        var source = context.getSource();
+        var owner = AccountArgument.getOwner(context);
+        var amount = AmountArgument.parse(StringArgumentType.getString(context, "amount"), operation == BalanceOperation.SET);
+        var data = PolyCoin.INSTANCE.getData(source.getServer());
+        Component message;
+
+        // Use the same lock order as transfers and account management.
+        synchronized (data) {
+            var account = AccountArgument.getAccount(data, owner, PolyCoinIdentifierArgument.getOptionalId(context, "account"));
+            synchronized (account) {
+                var previousBalance = account.balance();
+                if (operation == BalanceOperation.SET) {
+                    account.setBalance(amount);
+                } else {
+                    var transaction = operation == BalanceOperation.ADD
+                            ? account.increaseBalance(amount)
+                            : account.decreaseBalance(amount);
+                    if (transaction.isFailure()) {
+                        source.sendFailure(transaction.message());
+                        return 0;
+                    }
+                }
+                var currency = account.currency();
+                message = Component.literal("Updated " + owner.name() + " / " + account.id().getPath() + ": ")
+                        .append(currency.formatValueComponent(previousBalance, true))
+                        .append(" -> ").append(account.formattedBalance());
+            }
         }
 
-        PolyCoinEconomyAccount account = accountId == null
-                ? PolyCoin.INSTANCE.getData(source.getServer()).getMainAccount(player.getUUID())
-                : PolyCoin.INSTANCE.getData(source.getServer()).getAccount(player.getGameProfile(), accountId);
-
-        if (account == null) {
-            source.sendFailure(Component.literal("Unknown account: " + accountId));
-            return 0;
-        }
-
-        source.sendSuccess(
-                () -> account.name().copy()
-                        .append(" balance: ")
-                        .append(account.formattedBalance()),
-                false
-        );
+        source.sendSuccess(() -> message, true);
         return 1;
     }
 }

@@ -28,8 +28,8 @@ public final class CurrencyCommand extends PolyCoinCommand {
     public CurrencyCommand() {
         super(
                 "currency",
-                "Lists and inspects currencies; create, delete, and modify are admin-only",
-                "list | info <id> | create <id> <name> <icon> <default_balance> | delete <id> [confirm] | modify <id> <name|icon|default_balance> [value]",
+                "Lists and inspects currencies; changing currencies and the default is admin-only",
+                "list | info [id] | default [id] | create <id> <name> <icon> <default_balance> | delete [id] [confirm] | modify [id] <name|icon|default_balance> [value]",
                 PermissionLevel.ALL
         );
     }
@@ -38,7 +38,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name, CommandBuildContext buildContext) {
         return super.getCommand(name, buildContext)
                 .then(Commands.literal("list").executes(context -> listCurrencies(context.getSource())))
-                .then(Commands.literal("info").then(
+                .then(Commands.literal("info").executes(context -> showCurrencyInfo(context.getSource(), null)).then(
                         Commands.argument(ID_ARGUMENT, StringArgumentType.word())
                                 .suggests(CurrencyArgument::suggestCurrencies)
                                 .executes(context -> showCurrencyInfo(
@@ -46,6 +46,14 @@ public final class CurrencyCommand extends PolyCoinCommand {
                                         StringArgumentType.getString(context, ID_ARGUMENT)
                                 ))
                 ))
+                .then(Commands.literal("default")
+                        .executes(context -> defaultCurrency(context.getSource(), null))
+                        .then(Commands.argument(ID_ARGUMENT, StringArgumentType.string())
+                                .requires(this::canManageCurrencies)
+                                .suggests(CurrencyArgument::suggestCurrencies)
+                                .executes(context -> defaultCurrency(context.getSource(), StringArgumentType.getString(context, ID_ARGUMENT)))
+                        )
+                )
                 .then(createCommand(buildContext).requires(this::canManageCurrencies))
                 .then(deleteCommand().requires(this::canManageCurrencies))
                 .then(modifyCommand(buildContext).requires(this::canManageCurrencies));
@@ -65,8 +73,8 @@ public final class CurrencyCommand extends PolyCoinCommand {
         } else {
             for (PolyCoinEconomyCurrency currency : currencies.values()) {
                 message.append("\n- " + currency.id().getPath() + " - ").append(currency.name());
-                if (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id())) {
-                    message.append(" (main)");
+                if (data.getDefaultCurrency() == currency) {
+                    message.append(" (default)");
                 }
             }
         }
@@ -75,17 +83,30 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int showCurrencyInfo(CommandSourceStack source, String rawId) {
-        PolyCoinEconomyCurrency currency = findCurrency(source, rawId);
+    private static int showCurrencyInfo(CommandSourceStack source, @Nullable String rawId) {
+        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
 
         var message = Component.literal("Currency: " + currency.id())
                 .append("\nName: ").append(currency.name())
                 .append("\nIcon: " + BuiltInRegistries.ITEM.getKey(currency.iconItem()))
                 .append("\nDefault balance: ").append(currency.formatValueComponent(currency.defaultBalance(), true))
-                .append("\nMain currency: " + (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id()) ? "yes" : "no"));
+                .append("\nDefault currency: " + (data.getDefaultCurrency() == currency ? "yes" : "no"));
 
         source.sendSuccess(() -> message, false);
+        return 1;
+    }
+
+    private static int defaultCurrency(CommandSourceStack source, @Nullable String rawId) {
+        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
+        if (currency == null) return 0;
+        if (rawId != null) data.setDefaultCurrency(currency.id());
+        var message = Component.literal((rawId == null ? "Default currency: " : "Set default currency to ")
+                + currency.id().getPath() + " - ").append(currency.name());
+        if (rawId != null) message.append(". Existing accounts and balances were not changed.");
+        source.sendSuccess(() -> message, rawId != null);
         return 1;
     }
 
@@ -109,61 +130,40 @@ public final class CurrencyCommand extends PolyCoinCommand {
     }
 
     private static ArgumentBuilder<CommandSourceStack, ?> deleteCommand() {
-        return Commands.literal("delete").then(
-                Commands.argument(ID_ARGUMENT, StringArgumentType.word())
-                        .suggests(CurrencyArgument::suggestCurrencies)
-                        .executes(context -> requestDeletion(
-                                context.getSource(),
-                                StringArgumentType.getString(context, ID_ARGUMENT)
-                        ))
-                        .then(Commands.literal("confirm").executes(context -> deleteCurrency(
-                                context.getSource(),
-                                StringArgumentType.getString(context, ID_ARGUMENT)
-                        )))
-        );
+        return deletionArguments(Commands.literal("delete"))
+                .then(deletionArguments(Commands.argument(ID_ARGUMENT, StringArgumentType.string())
+                        .suggests((context, builder) -> CurrencyArgument.suggestCurrencies(context, builder, "confirm"))));
+    }
+
+    private static <T extends ArgumentBuilder<CommandSourceStack, T>> T deletionArguments(T command) {
+        return command.executes(context -> requestDeletion(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
+                .then(Commands.literal("confirm").executes(context ->
+                        deleteCurrency(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT))));
     }
 
     private static ArgumentBuilder<CommandSourceStack, ?> modifyCommand(CommandBuildContext buildContext) {
-        return Commands.literal("modify").then(
-                Commands.argument(ID_ARGUMENT, StringArgumentType.word())
-                        .suggests(CurrencyArgument::suggestCurrencies)
-                        .then(Commands.literal("name")
-                                .executes(context -> queryName(
-                                        context.getSource(),
-                                        StringArgumentType.getString(context, ID_ARGUMENT)
-                                ))
-                                .then(Commands.argument("value", StringArgumentType.string())
-                                        .executes(context -> setName(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, ID_ARGUMENT),
-                                                StringArgumentType.getString(context, "value")
-                                        )))
-                        )
-                        .then(Commands.literal("icon")
-                                .executes(context -> queryIcon(
-                                        context.getSource(),
-                                        StringArgumentType.getString(context, ID_ARGUMENT)
-                                ))
-                                .then(Commands.argument("value", ItemArgument.item(buildContext))
-                                        .executes(context -> setIcon(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, ID_ARGUMENT),
-                                                ItemArgument.getItem(context, "value").item().value()
-                                        )))
-                        )
-                        .then(Commands.literal("default_balance")
-                                .executes(context -> queryDefaultBalance(
-                                        context.getSource(),
-                                        StringArgumentType.getString(context, ID_ARGUMENT)
-                                ))
-                                .then(Commands.argument("value", StringArgumentType.word())
-                                        .executes(context -> setDefaultBalance(
-                                                context.getSource(),
-                                                StringArgumentType.getString(context, ID_ARGUMENT),
-                                                StringArgumentType.getString(context, "value")
-                                        )))
-                        )
-        );
+        return modificationArguments(Commands.literal("modify"), buildContext)
+                .then(modificationArguments(Commands.argument(ID_ARGUMENT, StringArgumentType.string())
+                        .suggests((context, builder) -> CurrencyArgument.suggestCurrencies(context, builder, "name", "icon", "default_balance")), buildContext));
+    }
+
+    private static <T extends ArgumentBuilder<CommandSourceStack, T>> T modificationArguments(T command, CommandBuildContext buildContext) {
+        return command
+                .then(Commands.literal("name")
+                        .executes(context -> queryName(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
+                        .then(Commands.argument("value", StringArgumentType.string())
+                                .executes(context -> setName(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
+                                        StringArgumentType.getString(context, "value")))))
+                .then(Commands.literal("icon")
+                        .executes(context -> queryIcon(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
+                        .then(Commands.argument("value", ItemArgument.item(buildContext))
+                                .executes(context -> setIcon(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
+                                        ItemArgument.getItem(context, "value").item().value()))))
+                .then(Commands.literal("default_balance")
+                        .executes(context -> queryDefaultBalance(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
+                        .then(Commands.argument("value", StringArgumentType.word())
+                                .executes(context -> setDefaultBalance(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
+                                        StringArgumentType.getString(context, "value")))));
     }
 
     private static int createCurrency(
@@ -198,12 +198,13 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int requestDeletion(CommandSourceStack source, String rawId) {
+    private static int requestDeletion(CommandSourceStack source, @Nullable String rawId) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = findCurrency(source, data, rawId);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
-        if (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id())) {
-            source.sendFailure(Component.literal("The main currency cannot be deleted."));
+        Component deletionError = data.getCurrencyDeletionError(currency.id());
+        if (deletionError != null) {
+            source.sendFailure(deletionError);
             return 0;
         }
 
@@ -216,12 +217,13 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 0;
     }
 
-    private static int deleteCurrency(CommandSourceStack source, String rawId) {
+    private static int deleteCurrency(CommandSourceStack source, @Nullable String rawId) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = findCurrency(source, data, rawId);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
-        if (PolyCoinEconomyData.MAIN_CURRENCY_ID.equals(currency.id())) {
-            source.sendFailure(Component.literal("The main currency cannot be deleted."));
+        Component deletionError = data.getCurrencyDeletionError(currency.id());
+        if (deletionError != null) {
+            source.sendFailure(deletionError);
             return 0;
         }
 
@@ -239,21 +241,21 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int queryName(CommandSourceStack source, String rawId) {
-        PolyCoinEconomyCurrency currency = findCurrency(source, rawId);
+    private static int queryName(CommandSourceStack source, @Nullable String rawId) {
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
         if (currency == null) return 0;
         source.sendSuccess(() -> Component.literal(currency.id().getPath() + " name: " + currency.displayName()), false);
         return 1;
     }
 
-    private static int setName(CommandSourceStack source, String rawId, String value) {
+    private static int setName(CommandSourceStack source, @Nullable String rawId, String value) {
         if (value.isBlank()) {
             source.sendFailure(Component.literal("Currency name cannot be blank."));
             return 0;
         }
 
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = findCurrency(source, data, rawId);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
         if (data.updateCurrency(currency.id(), value, currency.iconItem(), currency.defaultBalance()) == null) {
             source.sendFailure(Component.literal("Currency no longer exists: " + currency.id().getPath()));
@@ -263,17 +265,17 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int queryIcon(CommandSourceStack source, String rawId) {
-        PolyCoinEconomyCurrency currency = findCurrency(source, rawId);
+    private static int queryIcon(CommandSourceStack source, @Nullable String rawId) {
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
         if (currency == null) return 0;
         Identifier itemId = BuiltInRegistries.ITEM.getKey(currency.iconItem());
         source.sendSuccess(() -> Component.literal(currency.id().getPath() + " icon: " + itemId), false);
         return 1;
     }
 
-    private static int setIcon(CommandSourceStack source, String rawId, Item value) {
+    private static int setIcon(CommandSourceStack source, @Nullable String rawId, Item value) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = findCurrency(source, data, rawId);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
         if (data.updateCurrency(currency.id(), currency.displayName(), value, currency.defaultBalance()) == null) {
             source.sendFailure(Component.literal("Currency no longer exists: " + currency.id().getPath()));
@@ -284,8 +286,8 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int queryDefaultBalance(CommandSourceStack source, String rawId) {
-        PolyCoinEconomyCurrency currency = findCurrency(source, rawId);
+    private static int queryDefaultBalance(CommandSourceStack source, @Nullable String rawId) {
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
         if (currency == null) return 0;
         source.sendSuccess(
                 () -> Component.literal(currency.id().getPath() + " default balance: "
@@ -295,12 +297,12 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int setDefaultBalance(CommandSourceStack source, String rawId, String rawValue) {
+    private static int setDefaultBalance(CommandSourceStack source, @Nullable String rawId, String rawValue) {
         BigInteger value = parseNonNegativeAmount(source, rawValue);
         if (value == null) return 0;
 
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = findCurrency(source, data, rawId);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
         if (currency == null) return 0;
         PolyCoinEconomyCurrency updated = data.updateCurrency(
                 currency.id(), currency.displayName(), currency.iconItem(), value
@@ -332,26 +334,6 @@ public final class CurrencyCommand extends PolyCoinCommand {
             return null;
         }
         return value;
-    }
-
-    private static @Nullable PolyCoinEconomyCurrency findCurrency(CommandSourceStack source, String rawId) {
-        return findCurrency(source, PolyCoin.INSTANCE.getData(source.getServer()), rawId);
-    }
-
-    private static @Nullable PolyCoinEconomyCurrency findCurrency(
-            CommandSourceStack source,
-            PolyCoinEconomyData data,
-            String rawId
-    ) {
-        Identifier id = PolyCoinIdentifierArgument.parse(rawId);
-        if (id == null) {
-            source.sendFailure(Component.literal("Invalid currency id: " + rawId));
-            return null;
-        }
-
-        PolyCoinEconomyCurrency currency = data.getCurrency(id);
-        if (currency == null) source.sendFailure(Component.literal("Unknown currency: " + rawId));
-        return currency;
     }
 
 }

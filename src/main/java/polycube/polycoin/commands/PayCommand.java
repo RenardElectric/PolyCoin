@@ -2,6 +2,7 @@ package polycube.polycoin.commands;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -13,6 +14,7 @@ import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
 import polycube.polycoin.commands.commandArguments.AmountArgument;
+import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
@@ -31,95 +33,44 @@ public final class PayCommand extends PolyCoinCommand {
 
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name) {
-        return super.getCommand(name).then(
-                Commands.argument("player", EntityArgument.player()).then(
-                        Commands.argument("amount", StringArgumentType.word())
-                                .executes(context -> pay(
-                                        context.getSource(),
-                                        EntityArgument.getPlayer(context, "player"),
-                                        StringArgumentType.getString(context, "amount"),
-                                        null,
-                                        null
-                                ))
-                                .then(Commands.literal("from").then(
-                                        Commands.argument("sourceAccount", StringArgumentType.string())
-                                                .suggests(AccountArgument::suggestAccounts)
-                                                .executes(context -> pay(
-                                                        context.getSource(),
-                                                        EntityArgument.getPlayer(context, "player"),
-                                                        StringArgumentType.getString(context, "amount"),
-                                                        StringArgumentType.getString(context, "sourceAccount"),
-                                                        null
-                                                ))
-                                                .then(Commands.literal("to").then(
-                                                        Commands.argument("targetAccount", StringArgumentType.string())
-                                                                .suggests((context, builder) -> AccountArgument.suggestMatchingAccounts(
-                                                                        context, builder, "player", "sourceAccount",
-                                                                        AccountArgument.AccountSide.TARGET
-                                                                ))
-                                                                .executes(context -> pay(
-                                                                        context.getSource(),
-                                                                        EntityArgument.getPlayer(context, "player"),
-                                                                        StringArgumentType.getString(context, "amount"),
-                                                                        StringArgumentType.getString(context, "sourceAccount"),
-                                                                        StringArgumentType.getString(context, "targetAccount")
-                                                                ))
-                                                ))
-                                ))
-                                .then(Commands.literal("to").then(
-                                        Commands.argument("targetAccount", StringArgumentType.string())
-                                                .suggests((context, builder) -> AccountArgument.suggestTargetAccountsForMain(
-                                                        context, builder, "player"
-                                                ))
-                                                .executes(context -> pay(
-                                                        context.getSource(),
-                                                        EntityArgument.getPlayer(context, "player"),
-                                                        StringArgumentType.getString(context, "amount"),
-                                                        null,
-                                                        StringArgumentType.getString(context, "targetAccount")
-                                                ))
-                                                .then(Commands.literal("from").then(
-                                                        Commands.argument("sourceAccount", StringArgumentType.string())
-                                                                .suggests((context, builder) -> AccountArgument.suggestMatchingAccounts(
-                                                                        context, builder, "player", "targetAccount",
-                                                                        AccountArgument.AccountSide.SOURCE
-                                                                ))
-                                                                .executes(context -> pay(
-                                                                        context.getSource(),
-                                                                        EntityArgument.getPlayer(context, "player"),
-                                                                        StringArgumentType.getString(context, "amount"),
-                                                                        StringArgumentType.getString(context, "sourceAccount"),
-                                                                        StringArgumentType.getString(context, "targetAccount")
-                                                                ))
-                                                ))
-                                ))
-                )
-        );
+        var amount = Commands.argument("amount", StringArgumentType.word()).executes(this::pay);
+        for (var side : AccountArgument.AccountSide.values()) {
+            boolean from = side == AccountArgument.AccountSide.SOURCE;
+            String accountKey = from ? "sourceAccount" : "targetAccount";
+            String otherKey = from ? "targetAccount" : "sourceAccount";
+            var otherSide = from ? AccountArgument.AccountSide.TARGET : AccountArgument.AccountSide.SOURCE;
+            amount.then(Commands.literal(from ? "from" : "to").then(
+                    Commands.argument(accountKey, StringArgumentType.string())
+                            .suggests((context, builder) -> from
+                                    ? AccountArgument.suggestAccounts(context, builder)
+                                    : AccountArgument.suggestTargetAccountsForDefault(context, builder, "player"))
+                            .executes(this::pay)
+                            .then(Commands.literal(from ? "to" : "from").then(
+                                    Commands.argument(otherKey, StringArgumentType.string())
+                                            .suggests((context, builder) -> AccountArgument.suggestMatchingAccounts(
+                                                    context, builder, "player", accountKey, otherSide))
+                                            .executes(this::pay)
+                            ))
+            ));
+        }
+        return super.getCommand(name).then(Commands.argument("player", EntityArgument.player()).then(amount));
     }
 
-    private int pay(CommandSourceStack source, ServerPlayer target, String rawAmount, @Nullable String sourceAccountId, @Nullable String targetAccountId) throws CommandSyntaxException {
-        var sender = source.getPlayer();
-        if (sender == null) {
-            source.sendFailure(Component.literal("This command can only be executed by a player."));
-            return 0;
-        }
+    private int pay(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        var source = context.getSource();
+        var sender = AccountArgument.getOwner(context);
+        var target = EntityArgument.getPlayer(context, "player");
+        BigInteger amount = AmountArgument.parse(StringArgumentType.getString(context, "amount"), false);
+        String sourceAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "sourceAccount");
+        String targetAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "targetAccount");
 
-        if (sender.getUUID().equals(target.getUUID())) {
+        if (sender.id().equals(target.getUUID())) {
             source.sendFailure(Component.literal("You cannot pay yourself."));
             return 0;
         }
 
         var data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyAccount senderAccount = sourceAccountId == null
-                ? data.getMainAccount(sender.getUUID())
-                : data.getAccount(sender.getGameProfile(), sourceAccountId);
-
-        if (senderAccount == null) {
-            source.sendFailure(Component.literal("Unknown source account: " + sourceAccountId));
-            return 0;
-        }
-
-        BigInteger amount = AmountArgument.parse(rawAmount, false);
+        PolyCoinEconomyAccount senderAccount = AccountArgument.getAccount(data, sender, sourceAccountId);
 
         PolyCoinEconomyAccount targetAccount = findTargetAccount(data, target, targetAccountId, senderAccount);
         if (targetAccount == null) {
@@ -137,18 +88,21 @@ public final class PayCommand extends PolyCoinCommand {
         }
 
         var formattedAmount = senderAccount.currency().formatValueComponent(amount, true);
+        var onlineSender = source.getServer().getPlayerList().getPlayer(sender.id());
+        var senderName = onlineSender == null ? Component.literal(sender.name()) : onlineSender.getDisplayName();
         source.sendSuccess(
                 () -> Component.literal("Paid ")
                         .append(target.getDisplayName())
                         .append(" ")
-                        .append(formattedAmount),
-                false
+                        .append(formattedAmount)
+                        .append(AccountArgument.isActingAs(context) ? " on behalf of " + sender.name() : ""),
+                AccountArgument.isActingAs(context)
         );
         target.sendSystemMessage(
                 Component.literal("Received ")
                         .append(formattedAmount)
                         .append(" from ")
-                        .append(sender.getDisplayName())
+                        .append(senderName)
         );
         return 1;
     }
@@ -158,9 +112,9 @@ public final class PayCommand extends PolyCoinCommand {
             ServerPlayer target,
             @Nullable String targetAccountId,
             PolyCoinEconomyAccount senderAccount
-    ) {
+    ) throws CommandSyntaxException {
         if (targetAccountId != null) {
-            return data.getAccount(target.getGameProfile(), targetAccountId);
+            return AccountArgument.getAccount(data, target.getGameProfile(), targetAccountId);
         }
 
         String defaultAccountId = data.defaultAccount(target.getGameProfile(), senderAccount.currency());

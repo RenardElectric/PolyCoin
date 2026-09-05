@@ -46,7 +46,7 @@ public abstract class PolyCoinCommand {
     }
 
     protected String getUsage() {
-        return "/" + PolyCoin.MOD_ID + " " + name + (usage.isBlank() ? "" : " " + usage) + (hasQuickAlias ? " (/" + name + ")" : "") + (!aliases.isEmpty() ? "(aliases:" + String.join(", ", aliases) + ")" : "");
+        return "/" + PolyCoin.MOD_ID + " " + name + (usage.isBlank() ? "" : " " + usage) + (hasQuickAlias ? " (/" + name + ")" : "") + (!aliases.isEmpty() ? " (aliases: " + String.join(", ", aliases) + ")" : "");
     }
 
     protected String getFullDescription() {

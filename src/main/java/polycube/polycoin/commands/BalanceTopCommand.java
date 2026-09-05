@@ -60,7 +60,7 @@ public final class BalanceTopCommand extends PolyCoinCommand {
 
     private int showLeaderboard(CommandSourceStack source, int limit, @Nullable String currencyId) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = currencyId == null ? data.getMainCurrency() : data.getCurrency(currencyId);
+        PolyCoinEconomyCurrency currency = currencyId == null ? data.getDefaultCurrency() : data.getCurrency(currencyId);
 
         if (currency == null) {
             source.sendFailure(Component.literal("Unknown currency: " + currencyId));

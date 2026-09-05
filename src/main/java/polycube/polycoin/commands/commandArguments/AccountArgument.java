@@ -23,6 +23,7 @@ import polycube.polycoin.economy.PolyCoinEconomyData;
 import java.util.concurrent.CompletableFuture;
 
 public final class AccountArgument {
+    public static final String OWNER_ARGUMENT = "asPlayer";
     private static final SimpleCommandExceptionType SINGLE_OWNER_REQUIRED = new SimpleCommandExceptionType(
             Component.literal("Select exactly one account owner.")
     );
@@ -40,12 +41,19 @@ public final class AccountArgument {
 
     private AccountArgument() {}
 
-    public static GameProfile getOwner(
-            CommandContext<CommandSourceStack> context, @Nullable String ownerArgument
-    ) throws CommandSyntaxException {
-        if (ownerArgument == null) return context.getSource().getPlayerOrException().getGameProfile();
+    public static boolean isActingAs(CommandContext<CommandSourceStack> context) {
+        try {
+            context.getArgument(OWNER_ARGUMENT, GameProfileArgument.Result.class);
+            return true;
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
 
-        var owners = GameProfileArgument.getGameProfiles(context, ownerArgument);
+    public static GameProfile getOwner(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
+        if (!isActingAs(context)) return context.getSource().getPlayerOrException().getGameProfile();
+
+        var owners = GameProfileArgument.getGameProfiles(context, OWNER_ARGUMENT);
         if (owners.size() != 1) throw SINGLE_OWNER_REQUIRED.create();
         var owner = owners.iterator().next();
         return new GameProfile(owner.id(), owner.name());
@@ -58,8 +66,9 @@ public final class AccountArgument {
     }
 
     public static PolyCoinEconomyAccount getAccount(
-            PolyCoinEconomyData data, GameProfile owner, String rawId
+            PolyCoinEconomyData data, GameProfile owner, @Nullable String rawId
     ) throws CommandSyntaxException {
+        if (rawId == null) return data.getDefaultAccount(owner);
         PolyCoinEconomyAccount account = data.getAccount(owner, parseId(rawId).getPath());
         if (account == null) throw UNKNOWN_ACCOUNT.create(rawId);
         return account;
@@ -68,16 +77,17 @@ public final class AccountArgument {
     public static CompletableFuture<Suggestions> suggestAccounts(
             CommandContext<CommandSourceStack> context, SuggestionsBuilder builder
     ) {
-        return suggestAccounts(context, builder, null);
+        return suggestAccounts(context, builder, new String[0]);
     }
 
     public static CompletableFuture<Suggestions> suggestAccounts(
-            CommandContext<CommandSourceStack> context, SuggestionsBuilder builder, @Nullable String ownerArgument
+            CommandContext<CommandSourceStack> context, SuggestionsBuilder builder,
+            String... literalSiblings
     ) {
         try {
-            GameProfile owner = getOwner(context, ownerArgument);
+            GameProfile owner = getOwner(context);
             PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
-            return SharedSuggestionProvider.suggest(data.getAccountIds(owner), builder);
+            return PolyCoinIdentifierArgument.suggestIds(data.getAccountIds(owner), builder, literalSiblings);
         } catch (CommandSyntaxException exception) {
             return builder.buildFuture();
         }
@@ -85,12 +95,13 @@ public final class AccountArgument {
 
     public static CompletableFuture<Suggestions> suggestTransferTargets(
             CommandContext<CommandSourceStack> context, SuggestionsBuilder builder,
-            @Nullable String ownerArgument, String sourceAccountArgument
+            String sourceAccountArgument
     ) {
         try {
-            GameProfile owner = getOwner(context, ownerArgument);
+            GameProfile owner = getOwner(context);
             PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
-            Identifier sourceId = parseId(StringArgumentType.getString(context, sourceAccountArgument));
+            String rawId = PolyCoinIdentifierArgument.getOptionalId(context, sourceAccountArgument);
+            Identifier sourceId = parseId(rawId == null ? data.getDefaultAccountId(owner.id()) : rawId);
             var currency = data.getAccountCurrency(owner, sourceId.getPath());
             if (currency == null) return builder.buildFuture();
             return SharedSuggestionProvider.suggest(
@@ -101,35 +112,45 @@ public final class AccountArgument {
         }
     }
 
-    public static CompletableFuture<Suggestions> suggestTargetAccountsForMain(
+    public static CompletableFuture<Suggestions> suggestTargetAccountsForDefault(
             CommandContext<CommandSourceStack> context, SuggestionsBuilder builder, String playerKey
-    ) throws CommandSyntaxException {
-        ServerPlayer target = EntityArgument.getPlayer(context, playerKey);
-        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
-        return SharedSuggestionProvider.suggest(
-                data.getAccountIds(target.getGameProfile(), data.getMainCurrency()),
-                builder
-        );
+    ) {
+        try {
+            GameProfile source = getOwner(context);
+            ServerPlayer target = EntityArgument.getPlayer(context, playerKey);
+            PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
+            var currency = data.getAccountCurrency(source, data.getDefaultAccountId(source.id()));
+            if (currency == null) return builder.buildFuture();
+            return SharedSuggestionProvider.suggest(
+                    data.getAccountIds(target.getGameProfile(), currency),
+                    builder
+            );
+        } catch (CommandSyntaxException exception) {
+            return builder.buildFuture();
+        }
     }
 
     public static CompletableFuture<Suggestions> suggestMatchingAccounts(
             CommandContext<CommandSourceStack> context, SuggestionsBuilder builder,
             String playerKey, String otherAccountKey, AccountSide suggestedSide
-    ) throws CommandSyntaxException {
-        ServerPlayer source = context.getSource().getPlayer();
-        if (source == null) return builder.buildFuture();
+    ) {
+        try {
+            GameProfile source = getOwner(context);
 
-        ServerPlayer target = EntityArgument.getPlayer(context, playerKey);
-        ServerPlayer suggestedOwner = suggestedSide == AccountSide.SOURCE ? source : target;
-        ServerPlayer otherOwner = suggestedSide == AccountSide.SOURCE ? target : source;
-        PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
-        var currency = data.getAccountCurrency(
-                otherOwner.getGameProfile(),
-                StringArgumentType.getString(context, otherAccountKey)
-        );
+            ServerPlayer target = EntityArgument.getPlayer(context, playerKey);
+            GameProfile suggestedOwner = suggestedSide == AccountSide.SOURCE ? source : target.getGameProfile();
+            GameProfile otherOwner = suggestedSide == AccountSide.SOURCE ? target.getGameProfile() : source;
+            PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
+            var currency = data.getAccountCurrency(
+                    otherOwner,
+                    parseId(StringArgumentType.getString(context, otherAccountKey)).getPath()
+            );
 
-        return currency == null
-                ? builder.buildFuture()
-                : SharedSuggestionProvider.suggest(data.getAccountIds(suggestedOwner.getGameProfile(), currency), builder);
+            return currency == null
+                    ? builder.buildFuture()
+                    : SharedSuggestionProvider.suggest(data.getAccountIds(suggestedOwner, currency), builder);
+        } catch (CommandSyntaxException exception) {
+            return builder.buildFuture();
+        }
     }
 }
