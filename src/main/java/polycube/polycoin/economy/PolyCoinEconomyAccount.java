@@ -21,12 +21,6 @@ import java.util.UUID;
 
 public final class PolyCoinEconomyAccount implements EconomyAccount {
 
-    private static final Codec<Identifier> POLYCOIN_IDENTIFIER_CODEC =
-            Identifier.CODEC.validate(id -> {
-                if (PolyCoin.MOD_ID.equals(id.getNamespace())) return DataResult.success(id);
-                return DataResult.error(() -> "Expected PolyCoin identifier, got: " + id);
-            });
-
     private static final Codec<BigInteger> BALANCE_CODEC =
             Helpers.BIG_INTEGER_CODEC.validate(value -> {
                 if (value.signum() >= 0) return DataResult.success(value);
@@ -35,16 +29,16 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     public static final Codec<PolyCoinEconomyAccount> CODEC =
             RecordCodecBuilder.create(instance -> instance.group(
-                    POLYCOIN_IDENTIFIER_CODEC.fieldOf("id").forGetter(account -> account.id),
-                    POLYCOIN_IDENTIFIER_CODEC.fieldOf("currency").forGetter(account -> account.currencyId),
+                    Codec.STRING.fieldOf("id").forGetter(account -> account.id),
+                    Codec.STRING.fieldOf("currency").forGetter(account -> account.currencyId),
                     BALANCE_CODEC.fieldOf("balance").forGetter(PolyCoinEconomyAccount::balance),
                     UUIDUtil.STRING_CODEC.fieldOf("owner").forGetter(account -> account.owner),
                     Codec.STRING.fieldOf("name").forGetter(account -> account.name),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(account -> account.icon)
             ).apply(instance, PolyCoinEconomyAccount::new));
 
-    private final Identifier id;
-    private volatile Identifier currencyId;
+    private final String id;
+    private volatile String currencyId;
 
     private BigInteger balance;
 
@@ -54,77 +48,57 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     private volatile @Nullable PolyCoinEconomyData data;
 
-    public PolyCoinEconomyAccount(
-            Identifier id, Identifier currencyId, BigInteger balance,
+    PolyCoinEconomyAccount(
+            String id, String currencyId, BigInteger balance,
             UUID owner, String name, Item icon
     ) {
-        this.id = Helpers.requirePolyCoinIdentifier(id, "id");
-        this.currencyId = Helpers.requirePolyCoinIdentifier(currencyId, "currencyId");
-
-        this.balance = requireNonNegative(balance, "balance");
-
-        this.owner = Objects.requireNonNull(owner, "owner");
-        this.name = requireNonBlank(name, "name");
-        this.icon = Objects.requireNonNull(icon, "icon");
+        this.id = id;
+        this.currencyId = currencyId;
+        this.balance = balance;
+        this.owner = owner;
+        this.name = name;
+        this.icon = icon;
     }
 
     synchronized void attach(PolyCoinEconomyData data) {
-        Objects.requireNonNull(data, "data");
-
-        if (this.data != null && this.data != data) {
-            throw new IllegalStateException("Account " + id + " is already attached to another economy data instance");
-        }
-        if (data.getCurrency(currencyId) == null) {
-            throw new IllegalStateException("Account " + id + " references unknown currency " + currencyId);
-        }
         this.data = data;
     }
 
-    synchronized void detach(PolyCoinEconomyData data) {
-        if (this.data != data) {
-            throw new IllegalStateException("Account " + id + " is not attached to the expected economy data instance");
-        }
+    synchronized void detach() {
         this.data = null;
     }
 
-    synchronized void updateMetadata(Identifier currencyId, String name, Item icon) {
-        PolyCoinEconomyData data = requireData();
-        Identifier validatedCurrencyId = Helpers.requirePolyCoinIdentifier(currencyId, "currencyId");
-        String validatedName = requireNonBlank(name, "name");
-        Item validatedIcon = Objects.requireNonNull(icon, "icon");
+    synchronized DataResult<PolyCoinEconomyAccount> updateMetadata(String currencyId, String name, Item icon) {
+        var data = this.data;
+        if (data == null) return DataResult.error(() -> "Account is not attached to any economy data");
+        var currency = data.getCurrency(currencyId);
+        if (currency.isError()) return currency.map(_ -> this);
+        if (!this.currencyId.equals(currencyId) && balance.signum() != 0) return DataResult.error(() -> "An account balance must be zero before its currency can be changed");
+        if (name.isBlank()) return DataResult.error(() -> "Account name cannot be blank");
 
-        if (data.getCurrency(validatedCurrencyId) == null) {
-            throw new IllegalArgumentException("Unknown currency: " + validatedCurrencyId);
-        }
-        if (!this.currencyId.equals(validatedCurrencyId) && balance.signum() != 0) {
-            throw new IllegalStateException("An account balance must be zero before its currency can be changed");
-        }
-        if (this.currencyId.equals(validatedCurrencyId)
-                && this.name.equals(validatedName)
-                && this.icon == validatedIcon) {
-            return;
+        if (this.currencyId.equals(currencyId)
+                && this.name.equals(name)
+                && this.icon == icon) {
+            return DataResult.success(this);
         }
 
-        this.currencyId = validatedCurrencyId;
-        this.name = validatedName;
-        this.icon = validatedIcon;
+        this.currencyId = currencyId;
+        this.name = name;
+        this.icon = icon;
         data.setDirty();
+        return DataResult.success(this);
     }
 
-    private PolyCoinEconomyData requireData() {
-        PolyCoinEconomyData data = this.data;
-        if (data == null) {
-            throw new IllegalStateException("Economy account " + id + " is not attached to PolyCoinEconomyData");
-        }
-        return data;
-    }
-
-    boolean usesCurrency(Identifier currencyId) {
+    boolean usesCurrency(String currencyId) {
         return this.currencyId.equals(currencyId);
     }
 
-    public Identifier currencyId() {
+    public String currencyId() {
         return currencyId;
+    }
+
+    public String getId() {
+        return id;
     }
 
     public String displayName() {
@@ -147,7 +121,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public Identifier id() {
-        return id;
+        return Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, id);
     }
 
     @Override
@@ -223,11 +197,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public synchronized void setBalance(BigInteger value) {
-        requireNonNegative(value, "value");
-
-        // An account that isn't attached cannot be persisted safely.
-        // Check this before mutating anything.
-        PolyCoinEconomyData data = requireData();
+        Objects.requireNonNull(value, "value");
+        Helpers.requireNonNegative(value);
+        PolyCoinEconomyData data = this.data;
+        if (data == null) throw new IllegalStateException("Account is not attached to any economy data");
         if (balance.equals(value)) return;
         balance = value;
         data.setDirty();
@@ -240,29 +213,15 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public PolyCoinEconomyCurrency currency() {
-        PolyCoinEconomyCurrency currency = requireData().getCurrency(currencyId);
-        if (currency == null) {
-            throw new IllegalStateException("Currency " + currencyId + " for account " + id + " no longer exists");
-        }
-        return currency;
+        var data = this.data;
+        if (data == null) throw new IllegalStateException("Account is not attached to any economy data");
+        var currencyResult = data.getCurrency(currencyId);
+        if (currencyResult.isError()) throw new IllegalStateException("Currency " + currencyId + " for account " + id + " no longer exists");
+        return currencyResult.getOrThrow();
     }
 
     @Override
     public ItemStack accountIcon() {
         return icon.getDefaultInstance();
-    }
-
-    private static BigInteger requireNonNegative(BigInteger value, String name) {
-        Objects.requireNonNull(value, name);
-        if (value.signum() < 0) {
-            throw new IllegalArgumentException(name + " cannot be negative: " + value);
-        }
-        return value;
-    }
-
-    private static String requireNonBlank(String value, String name) {
-        Objects.requireNonNull(value, name);
-        if (value.isBlank()) throw new IllegalArgumentException(name + " cannot be blank");
-        return value;
     }
 }

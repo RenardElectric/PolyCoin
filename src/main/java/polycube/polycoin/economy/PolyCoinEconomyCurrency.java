@@ -26,12 +26,6 @@ public final class PolyCoinEconomyCurrency
     // Rejects: 1e10 NaN Infinity 1,000
     private static final Pattern VALUE_PATTERN = Pattern.compile("[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)");
 
-    private static final Codec<Identifier> POLYCOIN_IDENTIFIER_CODEC =
-            Identifier.CODEC.validate(id -> {
-                if (PolyCoin.MOD_ID.equals(id.getNamespace())) return DataResult.success(id);
-                return DataResult.error(() -> "Expected PolyCoin identifier, got: " + id);
-            });
-
     private static final Codec<BigInteger> DEFAULT_BALANCE_CODEC =
             Helpers.BIG_INTEGER_CODEC.validate(value -> {
                 if (value.signum() >= 0) return DataResult.success(value);
@@ -40,27 +34,31 @@ public final class PolyCoinEconomyCurrency
 
     public static final Codec<PolyCoinEconomyCurrency> CODEC =
             RecordCodecBuilder.create(instance -> instance.group(
-                    POLYCOIN_IDENTIFIER_CODEC.fieldOf("id").forGetter(currency -> currency.id),
+                    Codec.STRING.fieldOf("id").forGetter(currency -> currency.id),
                     Codec.STRING.fieldOf("name").forGetter(currency -> currency.name),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(currency -> currency.icon),
                     DEFAULT_BALANCE_CODEC.fieldOf("default_balance").forGetter(currency -> currency.defaultBalance)
             ).apply(instance, PolyCoinEconomyCurrency::new));
 
-    private final Identifier id;
+    private final String id;
     private final String name;
     private final Item icon;
     private final BigInteger defaultBalance;
 
-    public PolyCoinEconomyCurrency(Identifier id, String name, Item icon, BigInteger defaultBalance) {
-        this.id = Helpers.requirePolyCoinIdentifier(id, "currencyId");
-        this.name = Objects.requireNonNull(name, "name");
-        this.icon = Objects.requireNonNull(icon, "icon");
-        this.defaultBalance = requireNonNegative(defaultBalance, "defaultBalance");
+    PolyCoinEconomyCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
+        this.id = id;
+        this.name = name;
+        this.icon = icon;
+        this.defaultBalance = defaultBalance;
+    }
+
+    public String getId() {
+        return id;
     }
 
     @Override
     public Identifier id() {
-        return id;
+        return Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, id);
     }
 
     @Override
@@ -129,13 +127,5 @@ public final class PolyCoinEconomyCurrency
             result.initCause(exception);
             throw result;
         }
-    }
-
-    private static BigInteger requireNonNegative(BigInteger value, String name) {
-        Objects.requireNonNull(value, name);
-        if (value.signum() < 0) {
-            throw new IllegalArgumentException(name + " cannot be negative: " + value);
-        }
-        return value;
     }
 }
