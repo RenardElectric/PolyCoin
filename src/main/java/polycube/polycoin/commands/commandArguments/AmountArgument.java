@@ -3,20 +3,20 @@ package polycube.polycoin.commands.commandArguments;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
-import net.minecraft.network.chat.Component;
+import polycube.polycoin.commands.CommandText;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 
 import java.math.BigInteger;
 
 public final class AmountArgument {
     private static final DynamicCommandExceptionType INVALID_AMOUNT = new DynamicCommandExceptionType(
-            value -> Component.literal("Invalid amount: " + value)
+            value -> CommandText.error("Invalid amount: " + value)
     );
     private static final SimpleCommandExceptionType NEGATIVE_AMOUNT = new SimpleCommandExceptionType(
-            Component.literal("The amount cannot be negative.")
+            CommandText.error("The amount cannot be negative.")
     );
     private static final SimpleCommandExceptionType NON_POSITIVE_AMOUNT = new SimpleCommandExceptionType(
-            Component.literal("The amount must be greater than zero.")
+            CommandText.error("The amount must be greater than zero.")
     );
 
     private AmountArgument() {}

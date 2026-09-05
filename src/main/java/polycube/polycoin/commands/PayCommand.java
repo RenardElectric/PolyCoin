@@ -65,7 +65,7 @@ public final class PayCommand extends PolyCoinCommand {
         String targetAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "targetAccount");
 
         if (sender.id().equals(target.getUUID())) {
-            source.sendFailure(Component.literal("You cannot pay yourself."));
+            source.sendFailure(CommandText.error("You cannot pay yourself. Use account transfer to move money between your accounts."));
             return 0;
         }
 
@@ -77,32 +77,34 @@ public final class PayCommand extends PolyCoinCommand {
             String message = targetAccountId == null
                     ? "The target player has no default account for this currency."
                     : "Unknown target account: " + targetAccountId;
-            source.sendFailure(Component.literal(message));
+            source.sendFailure(CommandText.error(message));
             return 0;
         }
 
         var result = data.transfer(senderAccount, targetAccount, amount);
         if (!result.successful()) {
-            source.sendFailure(result.message());
+            source.sendFailure(CommandText.error(result.message()));
             return 0;
         }
 
-        var formattedAmount = senderAccount.currency().formatValueComponent(amount, true);
+        var formattedAmount = CommandText.amount(senderAccount.currency().formatValueComponent(amount, true));
         var onlineSender = source.getServer().getPlayerList().getPlayer(sender.id());
         var senderName = onlineSender == null ? Component.literal(sender.name()) : onlineSender.getDisplayName();
         source.sendSuccess(
-                () -> Component.literal("Paid ")
-                        .append(target.getDisplayName())
-                        .append(" ")
+                () -> CommandText.success("Paid ")
                         .append(formattedAmount)
-                        .append(AccountArgument.isActingAs(context) ? " on behalf of " + sender.name() : ""),
+                        .append(" to ").append(CommandText.value(target.getDisplayName()))
+                        .append(CommandText.field("From account", CommandText.account(senderAccount)))
+                        .append(AccountArgument.isActingAs(context)
+                                ? CommandText.field("On behalf of", CommandText.value(sender.name())) : Component.empty()),
                 AccountArgument.isActingAs(context)
         );
         target.sendSystemMessage(
-                Component.literal("Received ")
+                CommandText.success("Received ")
                         .append(formattedAmount)
                         .append(" from ")
-                        .append(senderName)
+                        .append(CommandText.value(senderName))
+                        .append(CommandText.field("To account", CommandText.account(targetAccount)))
         );
         return 1;
     }

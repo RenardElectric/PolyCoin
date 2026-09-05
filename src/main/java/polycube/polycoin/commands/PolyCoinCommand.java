@@ -42,15 +42,24 @@ public abstract class PolyCoinCommand {
     }
 
     protected String getDescription() {
-        return description + (permissionLevel.id() == 0 ? "." : " (" + permissionLevel.getSerializedName() + " only).");
+        return description.endsWith(".") ? description : description + ".";
     }
 
-    protected String getUsage() {
-        return "/" + PolyCoin.MOD_ID + " " + name + (usage.isBlank() ? "" : " " + usage) + (hasQuickAlias ? " (/" + name + ")" : "") + (!aliases.isEmpty() ? " (aliases: " + String.join(", ", aliases) + ")" : "");
-    }
-
-    protected String getFullDescription() {
-        return "\n" + getUsage() + "\n    - " + getDescription();
+    protected Component getFullDescription() {
+        var message = CommandText.header("/" + PolyCoin.MOD_ID + " " + name)
+                .append("\n" + getDescription());
+        if (permissionLevel != PermissionLevel.ALL) message.append(CommandText.muted(" (Admin only)"));
+        for (String variant : usage.split(" \\| ")) {
+            message.append("\n  ").append(CommandText.value("/" + PolyCoin.MOD_ID + " " + name
+                    + (variant.isBlank() ? "" : " " + variant)));
+        }
+        if (hasQuickAlias) {
+            var shortcuts = new ArrayList<String>();
+            shortcuts.add("/" + name);
+            for (String alias : aliases) shortcuts.add("/" + alias);
+            message.append(CommandText.field("Shortcuts", CommandText.value(String.join(", ", shortcuts))));
+        }
+        return message.append("\n<...> required • [...] optional.");
     }
 
     protected PermissionLevel getPermissionLevel() {
@@ -70,7 +79,7 @@ public abstract class PolyCoinCommand {
                     .requires(source -> hasPermission(source, permissionLevel))
                     .executes(e -> execute(e.getSource()))
                     .then(Commands.literal("help").executes(e -> {
-                        e.getSource().sendSuccess(() -> Component.literal(getFullDescription()), false);
+                        e.getSource().sendSuccess(this::getFullDescription, false);
                         return 1;
                     }));
 
@@ -95,7 +104,8 @@ public abstract class PolyCoinCommand {
     }
 
     protected int execute(CommandSourceStack source) {
-        source.sendFailure(Component.literal("Incomplete command! Usage : " + getUsage()));
+        source.sendFailure(CommandText.error("Incomplete command. Choose one of the forms below.")
+                .append("\n").append(getFullDescription()));
         return 0;
     }
 }

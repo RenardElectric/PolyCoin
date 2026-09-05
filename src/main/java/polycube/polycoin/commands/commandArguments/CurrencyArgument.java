@@ -4,10 +4,10 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
+import polycube.polycoin.commands.CommandText;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
@@ -26,11 +26,11 @@ public final class CurrencyArgument {
         if (rawId == null) return data.getDefaultCurrency();
         Identifier id = PolyCoinIdentifierArgument.parse(rawId);
         if (id == null) {
-            source.sendFailure(Component.literal("Invalid currency id: " + rawId));
+            source.sendFailure(CommandText.error("Invalid currency id: " + rawId));
             return null;
         }
         PolyCoinEconomyCurrency currency = data.getCurrency(id);
-        if (currency == null) source.sendFailure(Component.literal("Unknown currency: " + rawId));
+        if (currency == null) source.sendFailure(CommandText.error("Unknown currency: " + rawId));
         return currency;
     }
 

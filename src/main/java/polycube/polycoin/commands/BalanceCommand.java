@@ -46,8 +46,10 @@ public final class BalanceCommand extends PolyCoinCommand {
         var owner = AccountArgument.getOwner(context);
         var data = PolyCoin.INSTANCE.getData(source.getServer());
         var account = AccountArgument.getAccount(data, owner, accountId);
-        var message = Component.literal(owner.name() + " - " + account.id().getPath() + " - ")
-                .append(account.name()).append(" balance: ").append(account.formattedBalance());
+        var message = CommandText.header("Balance")
+                .append(CommandText.field("Owner", CommandText.value(owner.name())))
+                .append(CommandText.field("Account", CommandText.account(account)))
+                .append(CommandText.field("Available", CommandText.amount(account.formattedBalance())));
         source.sendSuccess(() -> message, false);
         return 1;
     }
@@ -71,14 +73,16 @@ public final class BalanceCommand extends PolyCoinCommand {
                             ? account.increaseBalance(amount)
                             : account.decreaseBalance(amount);
                     if (transaction.isFailure()) {
-                        source.sendFailure(transaction.message());
+                        source.sendFailure(CommandText.error(transaction.message()));
                         return 0;
                     }
                 }
                 var currency = account.currency();
-                message = Component.literal("Updated " + owner.name() + " / " + account.id().getPath() + ": ")
-                        .append(currency.formatValueComponent(previousBalance, true))
-                        .append(" -> ").append(account.formattedBalance());
+                message = CommandText.success("Balance updated")
+                        .append(CommandText.field("Owner", CommandText.value(owner.name())))
+                        .append(CommandText.field("Account", CommandText.account(account)))
+                        .append(CommandText.field("Before", CommandText.amount(currency.formatValueComponent(previousBalance, true))))
+                        .append(CommandText.field("Now", CommandText.amount(account.formattedBalance())));
             }
         }
 

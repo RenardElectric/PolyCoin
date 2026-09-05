@@ -12,11 +12,11 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
+import polycube.polycoin.commands.CommandText;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
@@ -25,13 +25,13 @@ import java.util.concurrent.CompletableFuture;
 public final class AccountArgument {
     public static final String OWNER_ARGUMENT = "asPlayer";
     private static final SimpleCommandExceptionType SINGLE_OWNER_REQUIRED = new SimpleCommandExceptionType(
-            Component.literal("Select exactly one account owner.")
+            CommandText.error("Select exactly one account owner.")
     );
     private static final DynamicCommandExceptionType UNKNOWN_ACCOUNT = new DynamicCommandExceptionType(
-            id -> Component.literal("Unknown account: " + id)
+            id -> CommandText.error("Unknown account: " + id)
     );
     private static final DynamicCommandExceptionType INVALID_ACCOUNT = new DynamicCommandExceptionType(
-            id -> Component.literal("Invalid account id: " + id)
+            id -> CommandText.error("Invalid account id: " + id)
     );
 
     public enum AccountSide {

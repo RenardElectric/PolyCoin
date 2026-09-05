@@ -3,6 +3,7 @@ package polycube.polycoin.commands;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
@@ -14,7 +15,6 @@ import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -63,25 +63,27 @@ public final class BalanceTopCommand extends PolyCoinCommand {
         PolyCoinEconomyCurrency currency = currencyId == null ? data.getDefaultCurrency() : data.getCurrency(currencyId);
 
         if (currency == null) {
-            source.sendFailure(Component.literal("Unknown currency: " + currencyId));
+            source.sendFailure(CommandText.error("Unknown currency: " + currencyId));
             return 0;
         }
 
         var entries = data.getTopAccounts(currency, limit);
-        var message = Component.literal("Top accounts for ").append(currency.name()).append(":");
+        var message = CommandText.header("Top balances")
+                .append(CommandText.field("Currency", CommandText.currency(currency)))
+                .append(CommandText.muted(" • " + entries.size() + " account(s)"));
 
         if (entries.isEmpty()) {
             message.append("\nNo accounts found.");
         } else {
             for (int index = 0; index < entries.size(); index++) {
                 var entry = entries.get(index);
-                message.append("\n")
-                        .append(Component.literal((index + 1) + ". "))
-                        .append(ownerName(source, entry.owner()))
-                        .append(" - ")
-                        .append(entry.accountName())
-                        .append(": ")
-                        .append(currency.formatValueComponent(entry.balance(), true));
+                message.append("\n  ")
+                        .append(Component.literal("#" + (index + 1) + " ")
+                                .withStyle(index == 0 ? ChatFormatting.GOLD : ChatFormatting.GRAY))
+                        .append(CommandText.value(ownerName(source, entry.owner())))
+                        .append(" • ").append(CommandText.value(entry.accountName()))
+                        .append(CommandText.muted(" (" + entry.accountId().getPath() + ")"))
+                        .append("\n    ").append(CommandText.amount(currency.formatValueComponent(entry.balance(), true)));
             }
         }
 

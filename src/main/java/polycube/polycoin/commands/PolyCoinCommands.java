@@ -6,7 +6,6 @@ import net.fabricmc.loader.api.ModContainer;
 import net.fabricmc.loader.api.metadata.Person;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
-import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 
@@ -40,7 +39,7 @@ public final class PolyCoinCommands {
 
         if (optionalModData.isEmpty()) {
             PolyCoin.LOGGER.warn("Could not find PolyCoin metadata while handling the base command");
-            cst.sendFailure(Component.literal("Could not fetch mod information."));
+            cst.sendFailure(CommandText.error("Could not fetch mod information."));
             return 0;
         }
         var modData = optionalModData.get();
@@ -48,9 +47,11 @@ public final class PolyCoinCommands {
                 .map(Person::getName)
                 .reduce((a, b) -> a + " and " + b)
                 .orElse("Unknown authors");
-        var modInfo = Component.literal("\n" + modData.getName() + " v" + modData.getVersion().getFriendlyString())
-                .append("\nMade by " + authors)
-                .append("\n" + modData.getDescription());
+        var modInfo = CommandText.header(modData.getName())
+                .append(CommandText.muted(" v" + modData.getVersion().getFriendlyString()))
+                .append(CommandText.field("Made by", CommandText.value(authors)))
+                .append("\n" + modData.getDescription())
+                .append("\n").append(CommandText.action("[View commands]", "/" + PolyCoin.MOD_ID + " help"));
         cst.sendSuccess(() -> modInfo, false);
         return 1;
     }
