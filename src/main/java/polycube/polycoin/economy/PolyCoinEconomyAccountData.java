@@ -120,9 +120,15 @@ public final class PolyCoinEconomyAccountData {
                     if (!account.usesCurrency(currencyId)) {
                         if (account.balance().signum() != 0) return DataResult.error(() -> "An account balance must be zero before its currency can be changed");
                         if (isDefaultAccount(uuid, accountId)) return DataResult.error(() -> "Set another default account before changing this account's currency");
+                        return PolyCoinEconomyAccount.create(data, accountId, currencyId, uuid, name, icon).map(replacement -> {
+                            accounts.get(uuid).put(accountId, replacement);
+                            data.setDirty();
+                            EconomyLog.accountUpdated(replacement, account.currencyId(), account.displayName(), account.iconItem());
+                            return replacement;
+                        });
                     }
-                    if (!account.usesCurrency(currencyId) || !account.displayName().equals(name) || account.iconItem() != icon) {
-                        account.setMetadata(currencyId, name, icon);
+                    if (!account.displayName().equals(name) || account.iconItem() != icon) {
+                        account.setMetadata(name, icon);
                         data.setDirty();
                     }
                     return DataResult.success(account);

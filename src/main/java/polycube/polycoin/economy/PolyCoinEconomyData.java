@@ -41,8 +41,12 @@ public final class PolyCoinEconomyData extends SavedData {
     static final Codec<PolyCoinEconomyData> CODEC = new Codec<>() {
         @Override
         public <T> DataResult<T> encode(PolyCoinEconomyData data, DynamicOps<T> ops, T prefix) {
-            return StoredData.CODEC.encode(new StoredData(data.currencyData.currencies, data.currencyData.defaultCurrencyId,
-                    data.accountData.accounts, data.accountData.defaultAccountIds), ops, prefix);
+            synchronized (data) {
+                var result = StoredData.CODEC.encode(new StoredData(data.currencyData.currencies, data.currencyData.defaultCurrencyId,
+                        data.accountData.accounts, data.accountData.defaultAccountIds), ops, prefix);
+                if (result.isSuccess()) data.changedAfterEncoding = false;
+                return result;
+            }
         }
 
         @Override
@@ -61,6 +65,7 @@ public final class PolyCoinEconomyData extends SavedData {
 
     final PolyCoinEconomyCurrencyData currencyData;
     final PolyCoinEconomyAccountData accountData;
+    private @Nullable Boolean changedAfterEncoding;
 
     public PolyCoinEconomyData() {
         this(
@@ -130,6 +135,18 @@ public final class PolyCoinEconomyData extends SavedData {
 
     @Override
     public synchronized boolean isDirty() { return super.isDirty(); }
+
+    @Override
+    public synchronized void setDirty(boolean dirty) {
+        if (dirty) {
+            if (changedAfterEncoding != null) changedAfterEncoding = true;
+            super.setDirty(true);
+        } else {
+            // Vanilla clears dirty after encoding, outside our lock. Preserve intervening API writes.
+            super.setDirty(Boolean.TRUE.equals(changedAfterEncoding));
+            changedAfterEncoding = null;
+        }
+    }
 
     public synchronized Map<String, PolyCoinEconomyAccount> getAccounts(UUID uuid) {
         return accountData.getAccounts(uuid);

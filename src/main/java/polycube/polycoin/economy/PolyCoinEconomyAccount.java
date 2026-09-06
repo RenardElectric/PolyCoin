@@ -30,19 +30,20 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     private final String id;
     private final UUID owner;
-    private String currencyId;
+    private final String currencyId;
     private BigInteger balance;
     private String name;
     private Item icon;
-    // Bound once, before publication. A removed account retains its lock, but fails the identity check.
     private final @Nullable PolyCoinEconomyData data;
 
     private PolyCoinEconomyAccount(String id, String currencyId, BigInteger balance, UUID owner, String name, Item icon) {
         this(id, currencyId, balance, owner, name, icon, null);
     }
 
-    private PolyCoinEconomyAccount(String id, String currencyId, BigInteger balance, UUID owner, String name, Item icon,
-                                   @Nullable PolyCoinEconomyData data) {
+    private PolyCoinEconomyAccount(
+            String id, String currencyId, BigInteger balance,
+            UUID owner, String name, Item icon, @Nullable PolyCoinEconomyData data
+    ) {
         this.id = id;
         this.currencyId = currencyId;
         this.balance = balance;
@@ -80,15 +81,12 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         }
     }
 
-    // Only the owning economy calls this after checking currency/default-account invariants.
-    void setMetadata(String currencyId, String name, Item icon) {
-        var previousCurrency = this.currencyId;
+    void setMetadata(String name, Item icon) {
         var previousName = this.name;
         var previousIcon = this.icon;
-        this.currencyId = currencyId;
         this.name = name;
         this.icon = icon;
-        EconomyLog.accountUpdated(this, previousCurrency, previousName, previousIcon);
+        EconomyLog.accountUpdated(this, currencyId, previousName, previousIcon);
     }
 
     boolean usesCurrency(String currencyId) {

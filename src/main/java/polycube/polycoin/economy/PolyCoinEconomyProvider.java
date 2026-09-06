@@ -73,6 +73,9 @@ public final class PolyCoinEconomyProvider implements EconomyProvider {
     }
 
     public PolyCoinEconomyData getData(MinecraftServer server) {
-        return server.getDataStorage().computeIfAbsent(PolyCoinEconomyData.TYPE);
+        var storage = server.getDataStorage();
+        synchronized (storage) {
+            return storage.computeIfAbsent(PolyCoinEconomyData.TYPE);
+        }
     }
 }

@@ -26,7 +26,7 @@ public final class PolyCoinEconomyCurrency
 
     public static final Codec<PolyCoinEconomyCurrency> CODEC =
             RecordCodecBuilder.create(instance -> instance.group(
-                    EconomyValidation.ID_CODEC.fieldOf("id").forGetter(currency -> currency.id),
+                    EconomyValidation.CURRENCY_ID_CODEC.fieldOf("id").forGetter(currency -> currency.id),
                     EconomyValidation.NAME_CODEC.fieldOf("name").forGetter(currency -> currency.name),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(currency -> currency.icon),
                     EconomyValidation.MONEY_CODEC.fieldOf("default_balance").forGetter(currency -> currency.defaultBalance)
@@ -45,7 +45,7 @@ public final class PolyCoinEconomyCurrency
     }
 
     static DataResult<PolyCoinEconomyCurrency> create(String id, String name, Item icon, BigInteger defaultBalance) {
-        return EconomyValidation.id(id)
+        return EconomyValidation.currencyId(id)
                 .flatMap(_ -> EconomyValidation.metadata(name, icon))
                 .flatMap(_ -> EconomyValidation.money(defaultBalance))
                 .map(_ -> new PolyCoinEconomyCurrency(id, name, icon, defaultBalance));
