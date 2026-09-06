@@ -8,7 +8,7 @@ import net.minecraft.network.chat.MutableComponent;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 
-/** Shared, vanilla-client-compatible chat formatting. Never styles a caller's component in place. */
+/// Shared, vanilla-client-compatible chat formatting. Never styles a caller's component in place.
 public final class CommandText {
     private CommandText() {}
 
