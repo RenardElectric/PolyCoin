@@ -68,6 +68,8 @@ public final class PolyCoinEconomyData extends SavedData {
                 PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ID, Map.of(), Map.of()
         );
         setDirty();
+        EconomyLog.currencyCreated(currencyData.currencies.get(currencyData.defaultCurrencyId));
+        EconomyLog.defaultCurrencyChanged(null, currencyData.defaultCurrencyId);
     }
 
     private PolyCoinEconomyData(
@@ -171,6 +173,10 @@ public final class PolyCoinEconomyData extends SavedData {
 
     public synchronized DataResult<Integer> countAccounts(String currencyId) {
         return currencyData.getCurrency(currencyId).map(_ -> accountData.countAccounts(currencyId));
+    }
+
+    public synchronized DataResult<PolyCoinEconomyAccountData.CurrencyStatistics> getCurrencyStatistics(String currencyId) {
+        return currencyData.getCurrency(currencyId).map(_ -> accountData.getCurrencyStatistics(currencyId));
     }
 
     public synchronized @Nullable String defaultAccount(UUID uuid, String currencyId) {

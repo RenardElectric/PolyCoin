@@ -41,6 +41,7 @@ public final class PolyCoinEconomyCurrencyData {
             if (currencies.containsKey(currencyId)) return DataResult.error(() -> "Currency already exists: " + currencyId);
             currencies.put(currencyId, currency);
             revision++;
+            EconomyLog.currencyCreated(currency);
             data.accountData.ensureAllAccountsCreated();
             data.setDirty();
             return DataResult.success(currency);
@@ -54,6 +55,7 @@ public final class PolyCoinEconomyCurrencyData {
             }
             currencies.put(currencyId, updated);
             data.setDirty();
+            EconomyLog.currencyUpdated(currency, updated);
             return updated;
         }));
     }
@@ -80,6 +82,7 @@ public final class PolyCoinEconomyCurrencyData {
             currencies.remove(currencyId);
             revision++;
             data.setDirty();
+            EconomyLog.currencyDeleted(currency, deleted);
             return new CurrencyDeletionResult(currency, deleted);
         });
     }
@@ -87,8 +90,10 @@ public final class PolyCoinEconomyCurrencyData {
     DataResult<PolyCoinEconomyCurrency> setDefaultCurrency(String currencyId) {
         return getCurrency(currencyId).map(currency -> {
             if (!defaultCurrencyId.equals(currencyId)) {
+                var previous = defaultCurrencyId;
                 defaultCurrencyId = currencyId;
                 data.setDirty();
+                EconomyLog.defaultCurrencyChanged(previous, currencyId);
             }
             return currency;
         });

@@ -86,12 +86,15 @@ public final class CurrencyCommand extends PolyCoinCommand {
     private static int showCurrencyInfo(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        var statistics = CommandResult.require(data.getCurrencyStatistics(currency.getId()));
 
         var message = CommandText.header("Currency details")
                 .append(CommandText.field("Name", CommandText.value(currency.name())))
                 .append(CommandText.field("ID", CommandText.value(currency.id())))
                 .append(CommandText.field("Icon", CommandText.value(BuiltInRegistries.ITEM.getKey(currency.iconItem()))))
                 .append(CommandText.field("Starting balance", CommandText.amount(currency.formatValueComponent(currency.defaultBalance(), true))))
+                .append(CommandText.field("Accounts", CommandText.value(statistics.accountCount())))
+                .append(CommandText.field("Money in circulation", CommandText.amount(currency.formatValueComponent(statistics.totalBalance(), true))))
                 .append(CommandText.field("Default currency", CommandText.yesNo(data.isDefaultCurrency(currency.getId()))));
 
         source.sendSuccess(() -> message, false);

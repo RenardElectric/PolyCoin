@@ -13,6 +13,7 @@ import java.util.*;
 /// Internal account state. All access is serialized by the owning economy's monitor.
 public final class PolyCoinEconomyAccountData {
     public record LeaderboardEntry(UUID owner, Identifier accountId, Component accountName, BigInteger balance) {}
+    public record CurrencyStatistics(int accountCount, BigInteger totalBalance) {}
 
     private static final Comparator<LeaderboardEntry> LEADERBOARD_ORDER =
             Comparator.comparing(LeaderboardEntry::balance).reversed()
@@ -108,6 +109,7 @@ public final class PolyCoinEconomyAccountData {
                     if (playerAccounts.containsKey(accountId)) return DataResult.error(() -> "Account already exists: " + accountId);
                     playerAccounts.put(accountId, account);
                     data.setDirty();
+                    EconomyLog.accountCreated(account);
                     return DataResult.success(account);
                 });
     }
@@ -132,6 +134,7 @@ public final class PolyCoinEconomyAccountData {
             if (isDefaultAccount(uuid, accountId)) return DataResult.error(() -> "Cannot delete the default account. Set another default first.");
             accounts.get(uuid).remove(accountId);
             data.setDirty();
+            EconomyLog.accountDeleted(account, "deleted");
             return DataResult.success(account);
         });
     }
@@ -151,8 +154,26 @@ public final class PolyCoinEconomyAccountData {
                     if (debit.isFailure()) return DataResult.error(() -> debit.message().getString());
                     var credit = target.canIncreaseBalance(amount);
                     if (credit.isFailure()) return DataResult.error(() -> credit.message().getString());
-                    return source.trySetBalance(debit.finalBalance()).flatMap(_ -> target.trySetBalance(credit.finalBalance()));
+                    return source.trySetBalance(debit.finalBalance()).flatMap(_ -> target.trySetBalance(credit.finalBalance()))
+                            .map(balance -> {
+                                EconomyLog.transferred(source, target, amount);
+                                return balance;
+                            });
                 }));
+    }
+
+    CurrencyStatistics getCurrencyStatistics(String currencyId) {
+        int count = 0;
+        BigInteger total = BigInteger.ZERO;
+        for (var playerAccounts : accounts.values()) {
+            for (var account : playerAccounts.values()) {
+                if (account.usesCurrency(currencyId)) {
+                    count++;
+                    total = total.add(account.balance());
+                }
+            }
+        }
+        return new CurrencyStatistics(count, total);
     }
 
     int countAccounts(String currencyId) {
@@ -168,13 +189,18 @@ public final class PolyCoinEconomyAccountData {
         for (var playerAccounts : accounts.values()) {
             var iterator = playerAccounts.values().iterator();
             while (iterator.hasNext()) {
-                if (iterator.next().usesCurrency(currencyId)) {
+                var account = iterator.next();
+                if (account.usesCurrency(currencyId)) {
                     iterator.remove();
                     removed++;
+                    EconomyLog.accountDeleted(account, "currency_deleted");
                 }
             }
         }
-        defaultAccountIds.values().forEach(ids -> ids.remove(currencyId));
+        defaultAccountIds.forEach((owner, ids) -> {
+            var previous = ids.remove(currencyId);
+            if (previous != null) EconomyLog.defaultAccountChanged(owner, currencyId, previous, null, "currency_deleted");
+        });
         return removed;
     }
 
@@ -183,7 +209,15 @@ public final class PolyCoinEconomyAccountData {
         if (Objects.equals(initializedAt.get(uuid), revision)) return;
         var playerAccounts = accounts.computeIfAbsent(uuid, _ -> new TreeMap<>());
         var selections = defaultAccountIds.computeIfAbsent(uuid, _ -> new HashMap<>());
-        if (selections.keySet().removeIf(id -> !data.currencyData.currencies.containsKey(id))) data.setDirty();
+        var selectionIterator = selections.entrySet().iterator();
+        while (selectionIterator.hasNext()) {
+            var entry = selectionIterator.next();
+            if (!data.currencyData.currencies.containsKey(entry.getKey())) {
+                selectionIterator.remove();
+                data.setDirty();
+                EconomyLog.defaultAccountChanged(uuid, entry.getKey(), entry.getValue(), null, "unknown_currency");
+            }
+        }
 
         for (var currency : data.currencyData.currencies.values()) {
             var currencyId = currency.getId();
@@ -199,9 +233,13 @@ public final class PolyCoinEconomyAccountData {
                 }
                 account = PolyCoinEconomyAccount.defaultAccount(data, accountId, currency, uuid);
                 playerAccounts.put(accountId, account);
+                EconomyLog.accountCreated(account);
             }
-            selections.put(currencyId, account.getId());
+            var previous = selections.put(currencyId, account.getId());
             data.setDirty();
+            if (!account.getId().equals(previous)) {
+                EconomyLog.defaultAccountChanged(uuid, currencyId, previous, account.getId(), "automatic");
+            }
         }
         initializedAt.put(uuid, revision);
     }
@@ -221,7 +259,11 @@ public final class PolyCoinEconomyAccountData {
     DataResult<PolyCoinEconomyAccount> setDefaultAccount(UUID uuid, String accountId) {
         return getAccount(uuid, accountId).map(account -> {
             var ids = defaultAccountIds.get(uuid);
-            if (!accountId.equals(ids.put(account.currencyId(), accountId))) data.setDirty();
+            var previous = ids.put(account.currencyId(), accountId);
+            if (!accountId.equals(previous)) {
+                data.setDirty();
+                EconomyLog.defaultAccountChanged(uuid, account.currencyId(), previous, accountId, "selected");
+            }
             return account;
         });
     }

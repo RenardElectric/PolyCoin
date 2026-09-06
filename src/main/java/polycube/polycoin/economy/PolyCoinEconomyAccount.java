@@ -82,9 +82,13 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     // Only the owning economy calls this after checking currency/default-account invariants.
     void setMetadata(String currencyId, String name, Item icon) {
+        var previousCurrency = this.currencyId;
+        var previousName = this.name;
+        var previousIcon = this.icon;
         this.currencyId = currencyId;
         this.name = name;
         this.icon = icon;
+        EconomyLog.accountUpdated(this, previousCurrency, previousName, previousIcon);
     }
 
     boolean usesCurrency(String currencyId) {
@@ -131,8 +135,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
             var next = balance.add(delta);
             var result = new EconomyTransaction.Simple(true, Component.literal("Success"), next, balance, delta, this);
             if (apply && delta.signum() != 0) {
+                var previous = balance;
                 balance = next;
                 Objects.requireNonNull(data).setDirty();
+                EconomyLog.balanceChanged(this, previous, debit ? "decrease" : "increase");
             }
             return result;
         }
@@ -163,8 +169,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
             if (!isManaged()) return DataResult.error(() -> "Account is no longer available");
             return EconomyValidation.money(value).map(validated -> {
                 if (!balance.equals(validated)) {
+                    var previous = balance;
                     balance = validated;
                     Objects.requireNonNull(data).setDirty();
+                    EconomyLog.balanceChanged(this, previous, "set");
                 }
                 return balance;
             });
