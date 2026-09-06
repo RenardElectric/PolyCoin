@@ -1,6 +1,7 @@
 package polycube.polycoin.commands;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -103,7 +104,7 @@ public abstract class PolyCoinCommand {
         return source.permissions().hasPermission(new Permission.HasCommandLevel(permissionLevel));
     }
 
-    protected int execute(CommandSourceStack source) {
+    protected int execute(CommandSourceStack source) throws CommandSyntaxException {
         source.sendFailure(CommandText.error("Incomplete command. Choose one of the forms below.")
                 .append("\n").append(getFullDescription()));
         return 0;

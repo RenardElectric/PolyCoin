@@ -3,6 +3,7 @@ package polycube.polycoin.commands;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -20,12 +21,13 @@ import java.util.UUID;
 
 public final class BalanceTopCommand extends PolyCoinCommand {
     private static final int ENTRY_LIMIT = 10;
+    private static final int MAX_ENTRY_LIMIT = 100;
 
     public BalanceTopCommand() {
         super(
                 "balancetop",
                 "Displays the top accounts by balance for a given currency.",
-                "[limit] [currency]",
+                "[currency] | <limit:1-100> [currency]",
                 PermissionLevel.ALL,
                 true,
                 List.of("baltop")
@@ -35,14 +37,14 @@ public final class BalanceTopCommand extends PolyCoinCommand {
     @Override
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name) {
         return super.getCommand(name).then(
-                Commands.argument("limit", IntegerArgumentType.integer(1))
+                Commands.argument("limit", IntegerArgumentType.integer(1, MAX_ENTRY_LIMIT))
                         .executes(context -> showLeaderboard(
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "limit"),
                                 null
                         ))
                         .then(
-                                Commands.argument("currency", StringArgumentType.word())
+                                Commands.argument("currency", StringArgumentType.string())
                                         .suggests(CurrencyArgument::suggestCurrencies)
                                         .executes(context -> showLeaderboard(
                                                 context.getSource(),
@@ -50,24 +52,21 @@ public final class BalanceTopCommand extends PolyCoinCommand {
                                                 StringArgumentType.getString(context, "currency")
                                         ))
                         )
-        );
+        ).then(Commands.argument("currency", StringArgumentType.string())
+                .suggests((context, builder) -> CurrencyArgument.suggestCurrencies(context, builder, "help"))
+                .executes(context -> showLeaderboard(context.getSource(), ENTRY_LIMIT,
+                        StringArgumentType.getString(context, "currency"))));
     }
 
     @Override
-    protected int execute(CommandSourceStack source) {
+    protected int execute(CommandSourceStack source) throws CommandSyntaxException {
         return showLeaderboard(source, ENTRY_LIMIT, null);
     }
 
-    private int showLeaderboard(CommandSourceStack source, int limit, @Nullable String currencyId) {
+    private int showLeaderboard(CommandSourceStack source, int limit, @Nullable String currencyId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = currencyId == null ? data.getDefaultCurrency() : data.getCurrency(currencyId);
-
-        if (currency == null) {
-            source.sendFailure(CommandText.error("Unknown currency: " + currencyId));
-            return 0;
-        }
-
-        var entries = data.getTopAccounts(currency, limit);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, currencyId);
+        var entries = CommandResult.require(data.getTopAccounts(currency.getId(), limit));
         var message = CommandText.header("Top balances")
                 .append(CommandText.field("Currency", CommandText.currency(currency)))
                 .append(CommandText.muted(" • " + entries.size() + " account(s)"));

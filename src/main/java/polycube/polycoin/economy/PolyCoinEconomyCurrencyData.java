@@ -60,7 +60,7 @@ public final class PolyCoinEconomyCurrencyData {
 
     public record CurrencyDeletionResult(PolyCoinEconomyCurrency currency, int deletedAccounts) {}
 
-    DataResult<CurrencyDeletionResult> deleteCurrency(String currencyId) {
+    DataResult<PolyCoinEconomyCurrency> checkCurrencyDeletion(String currencyId) {
         return getCurrency(currencyId).flatMap(currency -> {
             if (defaultCurrencyId.equals(currencyId)) {
                 return DataResult.error(() -> "Cannot delete the default currency. Set another default first.");
@@ -70,11 +70,17 @@ public final class PolyCoinEconomyCurrencyData {
                     return DataResult.error(() -> "Cannot delete currency " + currencyId + " because it has a default account for owner " + entry.getKey());
                 }
             }
+            return DataResult.success(currency);
+        });
+    }
+
+    DataResult<CurrencyDeletionResult> deleteCurrency(String currencyId) {
+        return checkCurrencyDeletion(currencyId).map(currency -> {
             int deleted = data.accountData.removeCurrency(currencyId);
             currencies.remove(currencyId);
             revision++;
             data.setDirty();
-            return DataResult.success(new CurrencyDeletionResult(currency, deleted));
+            return new CurrencyDeletionResult(currency, deleted);
         });
     }
 

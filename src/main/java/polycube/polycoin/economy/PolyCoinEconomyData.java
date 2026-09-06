@@ -205,6 +205,10 @@ public final class PolyCoinEconomyData extends SavedData {
         return currencyData.updateCurrency(id, name, icon, defaultBalance);
     }
 
+    public synchronized DataResult<PolyCoinEconomyCurrency> checkCurrencyDeletion(String currencyId) {
+        return currencyData.checkCurrencyDeletion(currencyId);
+    }
+
     public synchronized DataResult<PolyCoinEconomyCurrencyData.CurrencyDeletionResult> deleteCurrency(String id) {
         return currencyData.deleteCurrency(id);
     }

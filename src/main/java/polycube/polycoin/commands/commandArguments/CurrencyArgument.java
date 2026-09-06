@@ -1,6 +1,8 @@
 package polycube.polycoin.commands.commandArguments;
 
 import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
@@ -8,30 +10,31 @@ import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.CommandText;
+import polycube.polycoin.commands.CommandResult;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
 import java.util.concurrent.CompletableFuture;
 
 public final class CurrencyArgument {
+    private static final DynamicCommandExceptionType INVALID_CURRENCY = new DynamicCommandExceptionType(
+            id -> CommandText.error("Invalid currency id: " + id)
+    );
+
     private CurrencyArgument() {}
 
-    public static @Nullable PolyCoinEconomyCurrency getCurrency(CommandSourceStack source, @Nullable String rawId) {
-        return getCurrency(source, PolyCoin.INSTANCE.getData(source.getServer()), rawId);
+    public static PolyCoinEconomyCurrency getCurrency(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
+        return getCurrency(PolyCoin.INSTANCE.getData(source.getServer()), rawId);
     }
 
-    public static @Nullable PolyCoinEconomyCurrency getCurrency(
-            CommandSourceStack source, PolyCoinEconomyData data, @Nullable String rawId
-    ) {
-        if (rawId == null) return data.getDefaultCurrency();
+    public static String parseId(String rawId) throws CommandSyntaxException {
         Identifier id = PolyCoinIdentifierArgument.parse(rawId);
-        if (id == null) {
-            source.sendFailure(CommandText.error("Invalid currency id: " + rawId));
-            return null;
-        }
-        PolyCoinEconomyCurrency currency = data.getCurrency(id);
-        if (currency == null) source.sendFailure(CommandText.error("Unknown currency: " + rawId));
-        return currency;
+        if (id == null) throw INVALID_CURRENCY.create(rawId);
+        return id.getPath();
+    }
+
+    public static PolyCoinEconomyCurrency getCurrency(PolyCoinEconomyData data, @Nullable String rawId) throws CommandSyntaxException {
+        return CommandResult.require(data.getCurrency(rawId == null ? data.getDefaultCurrency() : parseId(rawId)));
     }
 
     public static CompletableFuture<Suggestions> suggestCurrencies(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {

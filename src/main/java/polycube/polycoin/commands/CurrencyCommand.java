@@ -3,24 +3,24 @@ package polycube.polycoin.commands;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.world.item.Item;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
+import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 
 import java.math.BigInteger;
-import java.util.TreeMap;
 
 public final class CurrencyCommand extends PolyCoinCommand {
     private static final String ID_ARGUMENT = "currency";
@@ -39,7 +39,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return super.getCommand(name, buildContext)
                 .then(Commands.literal("list").executes(context -> listCurrencies(context.getSource())))
                 .then(Commands.literal("info").executes(context -> showCurrencyInfo(context.getSource(), null)).then(
-                        Commands.argument(ID_ARGUMENT, StringArgumentType.word())
+                        Commands.argument(ID_ARGUMENT, StringArgumentType.string())
                                 .suggests(CurrencyArgument::suggestCurrencies)
                                 .executes(context -> showCurrencyInfo(
                                         context.getSource(),
@@ -65,7 +65,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
 
     private static int listCurrencies(CommandSourceStack source) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        var currencies = new TreeMap<>(data.getCurrencies());
+        var currencies = data.getCurrencies();
         var message = CommandText.header("Currencies").append(CommandText.muted(" (" + currencies.size() + ")"));
 
         if (currencies.isEmpty()) {
@@ -73,7 +73,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
         } else {
             for (PolyCoinEconomyCurrency currency : currencies.values()) {
                 message.append("\n  • ").append(CommandText.currency(currency));
-                if (data.getDefaultCurrency() == currency) {
+                if (data.isDefaultCurrency(currency.getId())) {
                     message.append(CommandText.badge());
                 }
             }
@@ -83,27 +83,25 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int showCurrencyInfo(CommandSourceStack source, @Nullable String rawId) {
+    private static int showCurrencyInfo(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
 
         var message = CommandText.header("Currency details")
                 .append(CommandText.field("Name", CommandText.value(currency.name())))
                 .append(CommandText.field("ID", CommandText.value(currency.id())))
                 .append(CommandText.field("Icon", CommandText.value(BuiltInRegistries.ITEM.getKey(currency.iconItem()))))
                 .append(CommandText.field("Starting balance", CommandText.amount(currency.formatValueComponent(currency.defaultBalance(), true))))
-                .append(CommandText.field("Default currency", CommandText.yesNo(data.getDefaultCurrency() == currency)));
+                .append(CommandText.field("Default currency", CommandText.yesNo(data.isDefaultCurrency(currency.getId()))));
 
         source.sendSuccess(() -> message, false);
         return 1;
     }
 
-    private static int defaultCurrency(CommandSourceStack source, @Nullable String rawId) {
+    private static int defaultCurrency(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        if (rawId != null) data.setDefaultCurrency(currency.id());
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        if (rawId != null) CommandResult.require(data.setDefaultCurrency(currency.getId()));
         var message = (rawId == null ? CommandText.header("Default currency") : CommandText.success("Default currency updated"))
                 .append(CommandText.field("Currency", CommandText.currency(currency)));
         if (rawId != null) message.append("\nExisting accounts and balances are unchanged.");
@@ -113,7 +111,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
 
     private static ArgumentBuilder<CommandSourceStack, ?> createCommand(CommandBuildContext buildContext) {
         return Commands.literal("create").then(
-                Commands.argument(ID_ARGUMENT, StringArgumentType.word()).then(
+                Commands.argument(ID_ARGUMENT, StringArgumentType.string()).then(
                         Commands.argument("name", StringArgumentType.string()).then(
                                 Commands.argument("icon", ItemArgument.item(buildContext)).then(
                                         Commands.argument("default_balance", StringArgumentType.word())
@@ -162,7 +160,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
                                         ItemArgument.getItem(context, "value").item().value()))))
                 .then(Commands.literal("default_balance")
                         .executes(context -> queryDefaultBalance(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
-                        .then(Commands.argument("value", StringArgumentType.word())
+                        .then(Commands.argument("value", StringArgumentType.string())
                                 .executes(context -> setDefaultBalance(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
                                         StringArgumentType.getString(context, "value")))));
     }
@@ -170,26 +168,11 @@ public final class CurrencyCommand extends PolyCoinCommand {
     private static int createCurrency(
             CommandSourceStack source, String rawId,
             String name, Item icon, String rawDefaultBalance
-    ) {
-        Identifier id = PolyCoinIdentifierArgument.parse(rawId);
-        if (id == null) {
-            source.sendFailure(CommandText.error("Invalid currency id. Use a PolyCoin id such as coins or polycoin:coins."));
-            return 0;
-        }
-        if (name.isBlank()) {
-            source.sendFailure(CommandText.error("Currency name cannot be blank."));
-            return 0;
-        }
-
-        BigInteger defaultBalance = parseNonNegativeAmount(source, rawDefaultBalance);
-        if (defaultBalance == null) return 0;
-
+    ) throws CommandSyntaxException {
+        String id = CurrencyArgument.parseId(rawId);
+        BigInteger defaultBalance = AmountArgument.parse(rawDefaultBalance, true);
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency created = data.createCurrency(id, name, icon, defaultBalance);
-        if (created == null) {
-            source.sendFailure(CommandText.error("Currency already exists: " + id.getPath()));
-            return 0;
-        }
+        PolyCoinEconomyCurrency created = CommandResult.require(data.createCurrency(id, name, icon, defaultBalance));
 
         source.sendSuccess(
                 () -> CommandText.success("Currency created")
@@ -200,18 +183,12 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int requestDeletion(CommandSourceStack source, @Nullable String rawId) {
+    private static int requestDeletion(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        Component deletionError = data.getCurrencyDeletionError(currency.id());
-        if (deletionError != null) {
-            source.sendFailure(CommandText.error(deletionError));
-            return 0;
-        }
-
-        int accountCount = data.countAccounts(currency);
-        String id = currency.id().getPath();
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        CommandResult.require(data.checkCurrencyDeletion(currency.getId()));
+        int accountCount = CommandResult.require(data.countAccounts(currency.getId()));
+        String id = currency.getId();
         source.sendFailure(CommandText.confirmation(
                 CommandText.currency(currency),
                 CommandText.field("Linked accounts to be deleted", CommandText.value(accountCount))
@@ -221,21 +198,10 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 0;
     }
 
-    private static int deleteCurrency(CommandSourceStack source, @Nullable String rawId) {
+    private static int deleteCurrency(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        Component deletionError = data.getCurrencyDeletionError(currency.id());
-        if (deletionError != null) {
-            source.sendFailure(CommandText.error(deletionError));
-            return 0;
-        }
-
-        PolyCoinEconomyData.CurrencyDeletionResult result = data.deleteCurrency(currency.id());
-        if (result == null) {
-            source.sendFailure(CommandText.error("Currency no longer exists: " + currency.id().getPath()));
-            return 0;
-        }
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        var result = CommandResult.require(data.deleteCurrency(currency.getId()));
 
         source.sendSuccess(
                 () -> CommandText.success("Currency deleted")
@@ -246,54 +212,38 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int queryName(CommandSourceStack source, @Nullable String rawId) {
+    private static int queryName(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
-        if (currency == null) return 0;
         source.sendSuccess(() -> CommandText.property(CommandText.currency(currency), "Name", CommandText.value(currency.name())), false);
         return 1;
     }
 
-    private static int setName(CommandSourceStack source, @Nullable String rawId, String value) {
-        if (value.isBlank()) {
-            source.sendFailure(CommandText.error("Currency name cannot be blank."));
-            return 0;
-        }
-
+    private static int setName(CommandSourceStack source, @Nullable String rawId, String value) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        if (data.updateCurrency(currency.id(), value, currency.iconItem(), currency.defaultBalance()) == null) {
-            source.sendFailure(CommandText.error("Currency no longer exists: " + currency.id().getPath()));
-            return 0;
-        }
-        source.sendSuccess(() -> CommandText.updated(CommandText.value(currency.id().getPath()), "Name", CommandText.value(value)), true);
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        var updated = CommandResult.require(data.updateCurrency(currency.getId(), value, currency.iconItem(), currency.defaultBalance()));
+        source.sendSuccess(() -> CommandText.updated(CommandText.currency(updated), "Name", CommandText.value(value)), true);
         return 1;
     }
 
-    private static int queryIcon(CommandSourceStack source, @Nullable String rawId) {
+    private static int queryIcon(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
-        if (currency == null) return 0;
         Identifier itemId = BuiltInRegistries.ITEM.getKey(currency.iconItem());
         source.sendSuccess(() -> CommandText.property(CommandText.currency(currency), "Icon", CommandText.value(itemId)), false);
         return 1;
     }
 
-    private static int setIcon(CommandSourceStack source, @Nullable String rawId, Item value) {
+    private static int setIcon(CommandSourceStack source, @Nullable String rawId, Item value) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        if (data.updateCurrency(currency.id(), currency.displayName(), value, currency.defaultBalance()) == null) {
-            source.sendFailure(CommandText.error("Currency no longer exists: " + currency.id().getPath()));
-            return 0;
-        }
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        var updated = CommandResult.require(data.updateCurrency(currency.getId(), currency.displayName(), value, currency.defaultBalance()));
         Identifier itemId = BuiltInRegistries.ITEM.getKey(value);
-        source.sendSuccess(() -> CommandText.updated(CommandText.currency(currency), "Icon", CommandText.value(itemId)), true);
+        source.sendSuccess(() -> CommandText.updated(CommandText.currency(updated), "Icon", CommandText.value(itemId)), true);
         return 1;
     }
 
-    private static int queryDefaultBalance(CommandSourceStack source, @Nullable String rawId) {
+    private static int queryDefaultBalance(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
-        if (currency == null) return 0;
         source.sendSuccess(
                 () -> CommandText.property(CommandText.currency(currency), "Starting balance",
                         CommandText.amount(currency.formatValueComponent(currency.defaultBalance(), true))),
@@ -302,20 +252,14 @@ public final class CurrencyCommand extends PolyCoinCommand {
         return 1;
     }
 
-    private static int setDefaultBalance(CommandSourceStack source, @Nullable String rawId, String rawValue) {
-        BigInteger value = parseNonNegativeAmount(source, rawValue);
-        if (value == null) return 0;
+    private static int setDefaultBalance(CommandSourceStack source, @Nullable String rawId, String rawValue) throws CommandSyntaxException {
+        BigInteger value = AmountArgument.parse(rawValue, true);
 
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, data, rawId);
-        if (currency == null) return 0;
-        PolyCoinEconomyCurrency updated = data.updateCurrency(
-                currency.id(), currency.displayName(), currency.iconItem(), value
-        );
-        if (updated == null) {
-            source.sendFailure(CommandText.error("Currency no longer exists: " + currency.id().getPath()));
-            return 0;
-        }
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
+        PolyCoinEconomyCurrency updated = CommandResult.require(data.updateCurrency(
+                currency.getId(), currency.displayName(), currency.iconItem(), value
+        ));
 
         source.sendSuccess(
                 () -> CommandText.updated(CommandText.currency(updated), "Starting balance",
@@ -324,22 +268,6 @@ public final class CurrencyCommand extends PolyCoinCommand {
                 true
         );
         return 1;
-    }
-
-    private static @Nullable BigInteger parseNonNegativeAmount(CommandSourceStack source, String rawValue) {
-        BigInteger value;
-        try {
-            value = PolyCoinEconomyCurrency.parseAmount(rawValue);
-        } catch (NumberFormatException exception) {
-            source.sendFailure(CommandText.error("Invalid balance: " + rawValue));
-            return null;
-        }
-
-        if (value.signum() < 0) {
-            source.sendFailure(CommandText.error("Default balance cannot be negative."));
-            return null;
-        }
-        return value;
     }
 
 }
