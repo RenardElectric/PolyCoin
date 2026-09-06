@@ -10,11 +10,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import org.jspecify.annotations.Nullable;
+import polycube.polycoin.util.Helpers;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 
 public final class PolyCoinEconomyProvider implements EconomyProvider {
 
@@ -30,9 +30,6 @@ public final class PolyCoinEconomyProvider implements EconomyProvider {
 
     @Override
     public @Nullable EconomyAccount getAccount(MinecraftServer server, GameProfile profile, String accountId) {
-        if (server == null) return null;
-        if (profile == null) return null;
-        if (accountId == null) return null;
         return getData(server).getAccount(profile.id(), accountId).mapOrElse(
                 account -> account,
                 _ -> null
@@ -41,15 +38,20 @@ public final class PolyCoinEconomyProvider implements EconomyProvider {
 
     @Override
     public Collection<EconomyAccount> getAccounts(MinecraftServer server, GameProfile profile) {
-        Objects.requireNonNull(server, "server");
-        Objects.requireNonNull(profile, "profile");
         return List.copyOf(getData(server).getAccounts(profile.id()).values());
     }
 
     @Override
+    public Collection<EconomyAccount> getAccounts(MinecraftServer server, GameProfile profile, EconomyCurrency currency) {
+        if (!Helpers.isPolyCoinIdentifier(currency.id())) return List.of();
+        var data = getData(server);
+        synchronized (data) {
+            return new ArrayList<>(data.getAccounts(profile.id(), currency.id().getPath()).values());
+        }
+    }
+
+    @Override
     public @Nullable EconomyCurrency getCurrency(MinecraftServer server, String currencyId) {
-        if (server == null) return null;
-        if (currencyId == null) return null;
         return getData(server).getCurrency(currencyId).mapOrElse(
                 currency -> currency,
                 _ -> null
@@ -58,17 +60,16 @@ public final class PolyCoinEconomyProvider implements EconomyProvider {
 
     @Override
     public Collection<EconomyCurrency> getCurrencies(MinecraftServer server) {
-        Objects.requireNonNull(server, "server");
         return List.copyOf(getData(server).getCurrencies().values());
     }
 
     @Override
     public @Nullable String defaultAccount(MinecraftServer server, GameProfile profile, EconomyCurrency currency) {
-        if (server == null) return null;
-        if (profile == null) return null;
-        if (currency == null) return null;
-        if (!(currency instanceof PolyCoinEconomyCurrency polyCoinEconomyCurrency)) return null;
-        return getData(server).defaultAccount(profile.id(), polyCoinEconomyCurrency.getId());
+        if (!Helpers.isPolyCoinIdentifier(currency.id())) return null;
+        var data = getData(server);
+        synchronized (data) {
+            return data.defaultAccount(profile.id(), currency.id().getPath());
+        }
     }
 
     public PolyCoinEconomyData getData(MinecraftServer server) {

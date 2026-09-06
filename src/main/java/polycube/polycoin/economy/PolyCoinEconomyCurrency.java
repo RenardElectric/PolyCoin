@@ -9,12 +9,10 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import polycube.polycoin.PolyCoin;
-import polycube.polycoin.util.Helpers;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
-import java.util.Objects;
 import java.util.regex.Pattern;
 
 public final class PolyCoinEconomyCurrency
@@ -26,18 +24,12 @@ public final class PolyCoinEconomyCurrency
     // Rejects: 1e10 NaN Infinity 1,000
     private static final Pattern VALUE_PATTERN = Pattern.compile("[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)");
 
-    private static final Codec<BigInteger> DEFAULT_BALANCE_CODEC =
-            Helpers.BIG_INTEGER_CODEC.validate(value -> {
-                if (value.signum() >= 0) return DataResult.success(value);
-                return DataResult.error(() -> "Default balance cannot be negative: " + value);
-            });
-
     public static final Codec<PolyCoinEconomyCurrency> CODEC =
             RecordCodecBuilder.create(instance -> instance.group(
-                    Codec.STRING.fieldOf("id").forGetter(currency -> currency.id),
-                    Codec.STRING.fieldOf("name").forGetter(currency -> currency.name),
+                    EconomyValidation.ID_CODEC.fieldOf("id").forGetter(currency -> currency.id),
+                    EconomyValidation.NAME_CODEC.fieldOf("name").forGetter(currency -> currency.name),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(currency -> currency.icon),
-                    DEFAULT_BALANCE_CODEC.fieldOf("default_balance").forGetter(currency -> currency.defaultBalance)
+                    EconomyValidation.MONEY_CODEC.fieldOf("default_balance").forGetter(currency -> currency.defaultBalance)
             ).apply(instance, PolyCoinEconomyCurrency::new));
 
     private final String id;
@@ -45,11 +37,24 @@ public final class PolyCoinEconomyCurrency
     private final Item icon;
     private final BigInteger defaultBalance;
 
-    PolyCoinEconomyCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
+    private PolyCoinEconomyCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
         this.id = id;
         this.name = name;
         this.icon = icon;
         this.defaultBalance = defaultBalance;
+    }
+
+    static DataResult<PolyCoinEconomyCurrency> create(String id, String name, Item icon, BigInteger defaultBalance) {
+        return EconomyValidation.id(id)
+                .flatMap(_ -> EconomyValidation.metadata(name, icon))
+                .flatMap(_ -> EconomyValidation.money(defaultBalance))
+                .map(_ -> new PolyCoinEconomyCurrency(id, name, icon, defaultBalance));
+    }
+
+    static PolyCoinEconomyCurrency defaultCurrency() {
+        return new PolyCoinEconomyCurrency(PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ID,
+                PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_NAME, PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ICON,
+                PolyCoinEconomyCurrencyData.DEFAULT_BALANCE);
     }
 
     public String getId() {
@@ -95,7 +100,6 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public String formatValue(BigInteger value, boolean precise) {
-        Objects.requireNonNull(value, "value");
         // We currently display the exact two-decimal representation in both modes.
         // Raw: 123456
         // Displayed: 1234.56
@@ -104,28 +108,25 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public BigInteger parseValue(String value) throws NumberFormatException {
-        return parseAmount(value);
+        return tryParseAmount(value).getOrThrow(NumberFormatException::new);
     }
 
-    public static BigInteger parseAmount(String value) throws NumberFormatException {
-        Objects.requireNonNull(value, "value");
+    public static DataResult<BigInteger> tryParseAmount(String value) {
         String input = value.strip();
 
         // BigDecimal itself accepts scientific notation. For a player
         // economy, accepting "1e20" accidentally is usually undesirable.
         if (!VALUE_PATTERN.matcher(input).matches()) {
-            throw new NumberFormatException("Invalid monetary value: " + value);
+            return DataResult.error(() -> "Invalid monetary value: " + value);
         }
 
         try {
             // UNNECESSARY means we never silently round money.
             // "1.234" -> rejected
             // "1.2300" -> accepted, because no precision is lost
-            return new BigDecimal(input).setScale(DECIMAL_PLACES, RoundingMode.UNNECESSARY).movePointRight(DECIMAL_PLACES).toBigIntegerExact();
-        } catch (ArithmeticException exception) {
-            NumberFormatException result = new NumberFormatException("Value has more than " + DECIMAL_PLACES + " decimal places of precision: " + value);
-            result.initCause(exception);
-            throw result;
+            return DataResult.success(new BigDecimal(input).setScale(DECIMAL_PLACES, RoundingMode.UNNECESSARY).movePointRight(DECIMAL_PLACES).toBigIntegerExact());
+        } catch (ArithmeticException | NumberFormatException exception) {
+            return DataResult.error(() -> "Value cannot be represented exactly with " + DECIMAL_PLACES + " decimal places: " + value);
         }
     }
 }

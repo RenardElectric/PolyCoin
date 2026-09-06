@@ -5,20 +5,14 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.saveddata.SavedData;
+import org.jspecify.annotations.Nullable;
 
 import java.math.BigInteger;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
-public final class PolyCoinEconomyAccountData extends SavedData {
-
-    public record LeaderboardEntry(
-            UUID owner,
-            Identifier accountId,
-            Component accountName,
-            BigInteger balance
-    ) {}
+/// Internal account state. All access is serialized by the owning economy's monitor.
+public final class PolyCoinEconomyAccountData {
+    public record LeaderboardEntry(UUID owner, Identifier accountId, Component accountName, BigInteger balance) {}
 
     private static final Comparator<LeaderboardEntry> LEADERBOARD_ORDER =
             Comparator.comparing(LeaderboardEntry::balance).reversed()
@@ -29,278 +23,206 @@ public final class PolyCoinEconomyAccountData extends SavedData {
     public static final String DEFAULT_ACCOUNT_ID = "main_account";
     public static final String DEFAULT_ACCOUNT_NAME = "Main Account";
 
-    final Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts;
-    final Map<UUID, Map<String, String>> defaultAccountIds;
-
+    final Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts = new HashMap<>();
+    final Map<UUID, Map<String, String>> defaultAccountIds = new HashMap<>();
+    private final Map<UUID, Long> initializedAt = new HashMap<>();
     private final PolyCoinEconomyData data;
 
-    public PolyCoinEconomyAccountData(
+    PolyCoinEconomyAccountData(
             PolyCoinEconomyData data,
             Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts,
             Map<UUID, Map<String, String>> defaultAccountIds
     ) {
         this.data = data;
-        this.accounts = new ConcurrentHashMap<>(accounts.size());
-        this.defaultAccountIds = new ConcurrentHashMap<>(defaultAccountIds.size());
-
-        // Validate, deep-copy and attach accounts.
         for (var ownerEntry : accounts.entrySet()) {
             var owner = ownerEntry.getKey();
-            var storedAccounts = ownerEntry.getValue();
-            var playerAccounts = new ConcurrentHashMap<String, PolyCoinEconomyAccount>(storedAccounts.size());
-
-            for (var entry : storedAccounts.entrySet()) {
-                var accountId = entry.getKey();
-                var account = entry.getValue();
-
-                if (!owner.equals(account.owner())) {
-                    throw new IllegalStateException("Account " + account.id() + " belongs to " + account.owner() + " but is stored under " + owner);
-                }
-
-                if (!accountId.equals(account.getId())) {
-                    throw new IllegalStateException("Account key '" + accountId + "' does not match account id '" + account.id() + "'");
-                }
-
-                var currency = data.getCurrency(account.currencyId());
-                if (currency.isError()) {
-                    throw new IllegalStateException("Account " + account.id() + " uses unknown currency " + account.currencyId());
-                }
-
-                account.attach(data);
-
-                playerAccounts.put(accountId, account);
+            var playerAccounts = new TreeMap<String, PolyCoinEconomyAccount>();
+            for (var entry : ownerEntry.getValue().entrySet()) {
+                var account = entry.getValue().copy(data);
+                playerAccounts.put(entry.getKey(), account);
             }
-
-            accounts.put(owner, playerAccounts);
+            this.accounts.put(owner, playerAccounts);
         }
+        defaultAccountIds.forEach((owner, ids) -> this.defaultAccountIds.put(owner, new HashMap<>(ids)));
+    }
 
-        var players = accounts.keySet();
+    boolean isManaged(PolyCoinEconomyAccount account) {
+        var playerAccounts = accounts.get(account.owner());
+        return playerAccounts != null && playerAccounts.get(account.getId()) == account;
+    }
+
+    void ensureAllAccountsCreated() {
+        var players = new HashSet<>(accounts.keySet());
         players.addAll(defaultAccountIds.keySet());
-
-        for (var player : players) {
-            ensureAccountsCreated(player);
-        }
-
-        for (var entries : defaultAccountIds.entrySet()) {
-            var player = entries.getKey();
-            for (var values : entries.getValue().entrySet()) {
-                var accountId = values.getValue();
-                var currencyId = values.getKey();
-                var playerAccounts = this.accounts.get(player);
-                if (playerAccounts == null || !playerAccounts.containsKey(accountId)) {
-                    throw new IllegalStateException("Default account " + accountId + " for player " + player + " and currency " + currencyId + " does not exist");
-                }
-                var account = playerAccounts.get(accountId);
-                if (!currencyId.equals(account.currencyId())) {
-                    throw new IllegalStateException("Default account " + accountId + " for player " + player + " and currency " + currencyId + " does not use that currency");
-                }
-            }
-        }
+        players.forEach(this::ensureAccountsCreated);
     }
 
-    Map<UUID, Map<String, PolyCoinEconomyAccount>> getAccountsInternal() {
-        return accounts;
-    }
-
-    private Map<String, PolyCoinEconomyAccount> getPlayerAccountsInternal(UUID uuid) {
+    private Map<String, PolyCoinEconomyAccount> getPlayerAccounts(UUID uuid) {
         ensureAccountsCreated(uuid);
-        return getAccountsInternal().get(uuid);
+        return accounts.get(uuid);
     }
 
     Map<String, PolyCoinEconomyAccount> getAccounts(UUID uuid) {
-        return Collections.unmodifiableMap(getPlayerAccountsInternal(uuid));
+        return Collections.unmodifiableMap(new TreeMap<>(getPlayerAccounts(uuid)));
     }
 
-    List<String> getAccountIds(UUID uuid) {
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        return List.copyOf(playerAccounts.keySet());
-    }
-
-    List<String> getAccountIds(UUID uuid, String currencyId) {
-        var accountIds = new TreeSet<String>();
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        for (PolyCoinEconomyAccount account : playerAccounts.values()) {
-            if (account.usesCurrency(currencyId)) {
-                accountIds.add(account.getId());
-            }
-        }
-        return List.copyOf(accountIds);
-    }
-
-    DataResult<PolyCoinEconomyCurrency> getAccountCurrency(UUID uuid, String accountId) {
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        var account = playerAccounts.get(accountId);
-        if (account == null) return DataResult.error(() -> "Account not found: " + accountId);
-        return data.getCurrency(account.currencyId());
+    Map<String, PolyCoinEconomyAccount> getAccounts(UUID uuid, String currencyId) {
+        if (!data.currencyData.currencies.containsKey(currencyId)) return Collections.emptyMap();
+        return getPlayerAccounts(uuid).values().stream().filter(account -> account.usesCurrency(currencyId))
+                .collect(TreeMap::new, (map, account) -> map.put(account.getId(), account), TreeMap::putAll);
     }
 
     DataResult<List<LeaderboardEntry>> getTopAccounts(String currencyId, int limit) {
         if (limit < 0) return DataResult.error(() -> "Limit must be non-negative");
-        if (limit == 0) return DataResult.success(List.of());
-
-        var entries = new PriorityQueue<>(limit, LEADERBOARD_ORDER.reversed());
-        for (Map<String, PolyCoinEconomyAccount> playerAccounts : getAccountsInternal().values()) {
-            for (PolyCoinEconomyAccount account : playerAccounts.values()) {
-                if (account.usesCurrency(currencyId)) {
-                    LeaderboardEntry entry = new LeaderboardEntry(account.owner(), account.id(), account.name(), account.balance());
-                    if (entries.size() < limit) {
-                        entries.add(entry);
-                    } else if (LEADERBOARD_ORDER.compare(entry, entries.peek()) < 0) {
+        return data.getCurrency(currencyId).map(_ -> {
+            if (limit == 0) return List.of();
+            var entries = new PriorityQueue<>(Math.min(limit, 64), LEADERBOARD_ORDER.reversed());
+            for (var playerAccounts : accounts.values()) {
+                for (var account : playerAccounts.values()) {
+                    if (!account.usesCurrency(currencyId)) continue;
+                    var entry = new LeaderboardEntry(account.owner(), account.id(), account.name(), account.balance());
+                    if (entries.size() < limit) entries.add(entry);
+                    else if (LEADERBOARD_ORDER.compare(entry, entries.peek()) < 0) {
                         entries.remove();
                         entries.add(entry);
                     }
                 }
             }
-        }
-
-        List<LeaderboardEntry> result = new ArrayList<>(entries);
-        result.sort(LEADERBOARD_ORDER);
-        return DataResult.success(List.copyOf(result));
+            var result = new ArrayList<>(entries);
+            result.sort(LEADERBOARD_ORDER);
+            return List.copyOf(result);
+        });
     }
 
-    synchronized DataResult<PolyCoinEconomyAccount> getAccount(UUID uuid, String accountId) {
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        var account = playerAccounts.get(accountId);
-        if (account != null) return DataResult.success(account);
-        return DataResult.error(() -> "Account not found: " + accountId);
+    DataResult<PolyCoinEconomyAccount> getAccount(UUID uuid, String accountId) {
+        if (!EconomyValidation.validId(accountId)) return DataResult.error(() -> "Invalid account ID: " + accountId);
+        var account = getPlayerAccounts(uuid).get(accountId);
+        return account == null ? DataResult.error(() -> "Account not found: " + accountId) : DataResult.success(account);
     }
 
-    synchronized DataResult<PolyCoinEconomyAccount> createAccount(
-            UUID uuid, String accountId, String name,
-            Item icon, String currencyId
-    ) {
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        if (playerAccounts.containsKey(accountId)) return DataResult.error(() -> "Account already exists: " + accountId);
-
-        var account = new PolyCoinEconomyAccount(accountId, currencyId, BigInteger.ZERO, uuid, name, icon);
-        account.attach(data);
-        playerAccounts.put(accountId, account);
-        setDirty();
-        return DataResult.success(account);
+    DataResult<PolyCoinEconomyAccount> createAccount(UUID uuid, String accountId, String name, Item icon, String currencyId) {
+        return PolyCoinEconomyAccount.create(data, accountId, currencyId, uuid, name, icon)
+                .flatMap(account -> data.getCurrency(currencyId).map(_ -> account))
+                .flatMap(account -> {
+                    var playerAccounts = getPlayerAccounts(uuid);
+                    if (playerAccounts.containsKey(accountId)) return DataResult.error(() -> "Account already exists: " + accountId);
+                    playerAccounts.put(accountId, account);
+                    data.setDirty();
+                    return DataResult.success(account);
+                });
     }
 
-    synchronized DataResult<PolyCoinEconomyAccount> updateAccount(
-            UUID uuid, String accountId, String name,
-            Item icon, String currencyId
-    ) {
-        var accountResult = getAccount(uuid, accountId);
-        return accountResult.flatMap(account -> account.updateMetadata(currencyId, name, icon));
-    }
-
-    synchronized DataResult<PolyCoinEconomyAccount> deleteAccount(UUID uuid, String accountId) {
-        if (isDefaultAccount(uuid, accountId)) return DataResult.error(() -> "Cannot delete the default account. Set another default first.");
-
-        var playerAccounts = getPlayerAccountsInternal(uuid);
-        var account = playerAccounts.remove(accountId);
-        if (account == null) return DataResult.error(() -> "Account not found: " + accountId);
-        account.detach();
-        setDirty();
-        return DataResult.success(account);
-    }
-
-    synchronized DataResult<BigInteger> transfer(UUID sourceUuid, String sourceAccountId, UUID targetUuid, String targetAccountId, BigInteger amount) {
-        if (amount.signum() <= 0) return DataResult.error(() -> "Transfer amount must be positive");
-        if (sourceUuid.equals(targetUuid) && sourceAccountId.equals(targetAccountId)) return DataResult.error(() -> "The source and target accounts must be different.");
-
-        var sourceResult = getAccount(sourceUuid, sourceAccountId);
-        if (sourceResult.isError()) return sourceResult.map(_ -> BigInteger.ZERO);
-        var targetResult = getAccount(targetUuid, targetAccountId);
-        if (targetResult.isError()) return targetResult.map(_ -> BigInteger.ZERO);
-
-        var source = sourceResult.getOrThrow();
-        var target = targetResult.getOrThrow();
-
-        // The data lock serializes transfers and account deletion/metadata changes.
-        // Account locks also exclude balance changes made through the economy API.
-        synchronized (source) {
-            synchronized (target) {
-                if (!source.usesCurrency(target.currencyId())) return DataResult.error(() -> "The source and target accounts use different currencies.");
-
-                var debit = source.canDecreaseBalance(amount);
-                if (debit.isFailure()) return DataResult.error(() -> debit.message().tryCollapseToString());
-                var credit = target.canIncreaseBalance(amount);
-                if (credit.isFailure()) return DataResult.error(() -> credit.message().tryCollapseToString());
-
-                // Both balances are validated before either changes; the locks keep
-                // these final values valid until both writes have completed.
-                source.setBalance(debit.finalBalance());
-                target.setBalance(credit.finalBalance());
-                return DataResult.success(credit.finalBalance());
-            }
-        }
-    }
-
-    DataResult<Integer> countAccounts(String currencyId) {
-        int count = 0;
-        for (Map<String, PolyCoinEconomyAccount> playerAccounts : accounts.values()) {
-            for (PolyCoinEconomyAccount account : playerAccounts.values()) {
-                if (account.usesCurrency(currencyId)) count++;
-            }
-        }
-        return DataResult.success(count);
-    }
-
-    String defaultAccount(UUID uuid, String currencyId) {
-        return getDefaultAccountId(uuid, currencyId);
-    }
-
-    private synchronized void ensureAccountsCreated(UUID uuid) {
-        var accounts = this.accounts.computeIfAbsent(uuid, _ -> new ConcurrentHashMap<>());
-        var defaultAccountIds = this.defaultAccountIds.computeIfAbsent(uuid, _ -> new ConcurrentHashMap<>());
-
-        for (var currency : data.getCurrencies().values()) {
-            var currencyId = currency.getId();
-            var defaultAccountId = defaultAccountIds.get(currencyId);
-            var defaultAccount = defaultAccountId == null ? null : accounts.get(defaultAccountId);
-            if (defaultAccount != null && defaultAccount.usesCurrency(currencyId)) continue;
-
-            defaultAccount = accounts.values().stream()
-                    .filter(account -> account.usesCurrency(currencyId))
-                    .min(Comparator.comparing(PolyCoinEconomyAccount::getId))
-                    .orElse(null);
-
-            if (defaultAccount == null) {
-                // Reuse a missing saved ID, but never overwrite another currency's account.
-                if (defaultAccountId == null || accounts.containsKey(defaultAccountId)) {
-                    var baseId = DEFAULT_ACCOUNT_ID + "_" + currencyId;
-                    defaultAccountId = baseId;
-                    for (int suffix = 1; accounts.containsKey(defaultAccountId); suffix++) {
-                        defaultAccountId = baseId + "_" + suffix;
+    DataResult<PolyCoinEconomyAccount> updateAccount(UUID uuid, String accountId, String name, Item icon, String currencyId) {
+        return EconomyValidation.metadata(name, icon).flatMap(_ -> data.getCurrency(currencyId))
+                .flatMap(_ -> getAccount(uuid, accountId)).flatMap(account -> {
+                    if (!account.usesCurrency(currencyId)) {
+                        if (account.balance().signum() != 0) return DataResult.error(() -> "An account balance must be zero before its currency can be changed");
+                        if (isDefaultAccount(uuid, accountId)) return DataResult.error(() -> "Set another default account before changing this account's currency");
                     }
-                }
-                defaultAccount = new PolyCoinEconomyAccount(
-                        defaultAccountId, currencyId, currency.defaultBalance(),
-                        uuid, DEFAULT_ACCOUNT_NAME, DEFAULT_ACCOUNT_ICON
-                );
-                defaultAccount.attach(data);
-                accounts.put(defaultAccountId, defaultAccount);
-            }
+                    if (!account.usesCurrency(currencyId) || !account.displayName().equals(name) || account.iconItem() != icon) {
+                        account.setMetadata(currencyId, name, icon);
+                        data.setDirty();
+                    }
+                    return DataResult.success(account);
+                });
+    }
 
-            defaultAccountIds.put(currencyId, defaultAccount.getId());
+    DataResult<PolyCoinEconomyAccount> deleteAccount(UUID uuid, String accountId) {
+        return getAccount(uuid, accountId).flatMap(account -> {
+            if (isDefaultAccount(uuid, accountId)) return DataResult.error(() -> "Cannot delete the default account. Set another default first.");
+            accounts.get(uuid).remove(accountId);
+            data.setDirty();
+            return DataResult.success(account);
+        });
+    }
+
+    DataResult<BigInteger> transfer(UUID sourceUuid, String sourceAccountId, UUID targetUuid, String targetAccountId, BigInteger amount) {
+        if (amount.signum() <= 0) return DataResult.error(() -> "Transfer amount must be positive");
+        if (!EconomyValidation.validId(sourceAccountId) || !EconomyValidation.validId(targetAccountId)) {
+            return DataResult.error(() -> "Invalid account ID");
+        }
+        if (sourceUuid.equals(targetUuid) && sourceAccountId.equals(targetAccountId)) {
+            return DataResult.error(() -> "The source and target accounts must be different.");
+        }
+        return getAccount(sourceUuid, sourceAccountId).flatMap(source ->
+                getAccount(targetUuid, targetAccountId).flatMap(target -> {
+                    if (!source.usesCurrency(target.currencyId())) return DataResult.error(() -> "The source and target accounts use different currencies.");
+                    var debit = source.canDecreaseBalance(amount);
+                    if (debit.isFailure()) return DataResult.error(() -> debit.message().getString());
+                    var credit = target.canIncreaseBalance(amount);
+                    if (credit.isFailure()) return DataResult.error(() -> credit.message().getString());
+                    return source.trySetBalance(debit.finalBalance()).flatMap(_ -> target.trySetBalance(credit.finalBalance()));
+                }));
+    }
+
+    int countAccounts(String currencyId) {
+        int count = 0;
+        for (var playerAccounts : accounts.values()) {
+            for (var account : playerAccounts.values()) if (account.usesCurrency(currencyId)) count++;
+        }
+        return count;
+    }
+
+    int removeCurrency(String currencyId) {
+        int removed = 0;
+        for (var playerAccounts : accounts.values()) {
+            var iterator = playerAccounts.values().iterator();
+            while (iterator.hasNext()) {
+                if (iterator.next().usesCurrency(currencyId)) {
+                    iterator.remove();
+                    removed++;
+                }
+            }
+        }
+        defaultAccountIds.values().forEach(ids -> ids.remove(currencyId));
+        return removed;
+    }
+
+    private void ensureAccountsCreated(UUID uuid) {
+        long revision = data.currencyData.revision;
+        if (Objects.equals(initializedAt.get(uuid), revision)) return;
+        var playerAccounts = accounts.computeIfAbsent(uuid, _ -> new TreeMap<>());
+        var selections = defaultAccountIds.computeIfAbsent(uuid, _ -> new HashMap<>());
+        if (selections.keySet().removeIf(id -> !data.currencyData.currencies.containsKey(id))) data.setDirty();
+
+        for (var currency : data.currencyData.currencies.values()) {
+            var currencyId = currency.getId();
+            var accountId = selections.get(currencyId);
+            var account = accountId == null ? null : playerAccounts.get(accountId);
+            if (account != null && account.usesCurrency(currencyId)) continue;
+            account = playerAccounts.values().stream().filter(candidate -> candidate.usesCurrency(currencyId)).findFirst().orElse(null);
+            if (account == null) {
+                if (accountId == null || !EconomyValidation.validId(accountId) || playerAccounts.containsKey(accountId)) {
+                    var baseId = DEFAULT_ACCOUNT_ID + "_" + currencyId;
+                    accountId = baseId;
+                    for (int suffix = 1; playerAccounts.containsKey(accountId); suffix++) accountId = baseId + "_" + suffix;
+                }
+                account = PolyCoinEconomyAccount.defaultAccount(data, accountId, currency, uuid);
+                playerAccounts.put(accountId, account);
+            }
+            selections.put(currencyId, account.getId());
             data.setDirty();
         }
+        initializedAt.put(uuid, revision);
     }
 
-    String getDefaultAccountId(UUID uuid, String currencyId) {
+    @Nullable String getDefaultAccountId(UUID uuid, String currencyId) {
+        if (!EconomyValidation.validId(currencyId) || !data.currencyData.currencies.containsKey(currencyId)) return null;
         ensureAccountsCreated(uuid);
         return defaultAccountIds.get(uuid).get(currencyId);
     }
 
     boolean isDefaultAccount(UUID uuid, String accountId) {
+        if (!EconomyValidation.validId(accountId)) return false;
         ensureAccountsCreated(uuid);
-        for (var entry : defaultAccountIds.get(uuid).entrySet()) {
-            if (accountId.equals(entry.getValue())) return true;
-        }
-        return false;
+        return defaultAccountIds.get(uuid).containsValue(accountId);
     }
 
-    synchronized DataResult<PolyCoinEconomyAccount> setDefaultAccount(UUID uuid, String accountId) {
-        var accountResult = getAccount(uuid, accountId);
-        if (accountResult.isError()) return accountResult;
-        var account = accountResult.getOrThrow();
-        if (isDefaultAccount(uuid, accountId)) return DataResult.success(account);
-        defaultAccountIds.computeIfAbsent(uuid, _ -> new ConcurrentHashMap<>()).put(account.currencyId(), accountId);
-        setDirty();
-        return DataResult.success(account);
+    DataResult<PolyCoinEconomyAccount> setDefaultAccount(UUID uuid, String accountId) {
+        return getAccount(uuid, accountId).map(account -> {
+            var ids = defaultAccountIds.get(uuid);
+            if (!accountId.equals(ids.put(account.currencyId(), accountId))) data.setDirty();
+            return account;
+        });
     }
 }
