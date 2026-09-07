@@ -53,8 +53,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
         this.data = data;
     }
 
-    static DataResult<PolyCoinEconomyAccount> create(PolyCoinEconomyData data, String id, String currencyId,
-                                                    UUID owner, String name, Item icon) {
+    static DataResult<PolyCoinEconomyAccount> create(
+            PolyCoinEconomyData data, String id, String currencyId,
+            UUID owner, String name, Item icon
+    ) {
         return EconomyValidation.id(id)
                 .flatMap(_ -> EconomyValidation.id(currencyId))
                 .flatMap(_ -> EconomyValidation.metadata(name, icon))
@@ -201,5 +203,9 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     @Override
-    public ItemStack accountIcon() { return iconItem().getDefaultInstance(); }
+    public ItemStack accountIcon() {
+        return icon == PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON
+                ? PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON_TEMPLATE.create()
+                : icon.getDefaultInstance();
+    }
 }

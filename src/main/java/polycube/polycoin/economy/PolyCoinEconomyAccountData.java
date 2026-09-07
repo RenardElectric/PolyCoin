@@ -1,11 +1,15 @@
 package polycube.polycoin.economy;
 
 import com.mojang.serialization.DataResult;
+import net.minecraft.core.component.DataComponentPatch;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import org.jspecify.annotations.Nullable;
+import polycube.polycoin.PolyCoin;
 
 import java.math.BigInteger;
 import java.util.*;
@@ -20,9 +24,16 @@ public final class PolyCoinEconomyAccountData {
                     .thenComparing(entry -> entry.owner().toString())
                     .thenComparing(entry -> entry.accountId().toString());
 
-    public static final Item DEFAULT_ACCOUNT_ICON = Items.NETHER_STAR;
+    public static final Item DEFAULT_ACCOUNT_ICON = Items.BUNDLE;
     public static final String DEFAULT_ACCOUNT_ID = "main_account";
     public static final String DEFAULT_ACCOUNT_NAME = "Main Account";
+    public final static ItemStackTemplate DEFAULT_ACCOUNT_ICON_TEMPLATE = new ItemStackTemplate(
+            DEFAULT_ACCOUNT_ICON,
+            DataComponentPatch.builder()
+                    .set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "default_account"))
+                    .set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+                    .build()
+    );
 
     final Map<UUID, Map<String, PolyCoinEconomyAccount>> accounts = new HashMap<>();
     final Map<UUID, Map<String, String>> defaultAccountIds = new HashMap<>();

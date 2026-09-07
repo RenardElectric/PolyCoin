@@ -220,12 +220,12 @@ public final class PolyCoinEconomyData extends SavedData {
         return currencyData.getCurrency(currencyId);
     }
 
-    public synchronized DataResult<PolyCoinEconomyCurrency> createCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
-        return currencyData.createCurrency(id, name, icon, defaultBalance);
+    public synchronized DataResult<PolyCoinEconomyCurrency> createCurrency(String id, String name, String denomination, Item icon, BigInteger defaultBalance) {
+        return currencyData.createCurrency(id, name, denomination, icon, defaultBalance);
     }
 
-    public synchronized DataResult<PolyCoinEconomyCurrency> updateCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
-        return currencyData.updateCurrency(id, name, icon, defaultBalance);
+    public synchronized DataResult<PolyCoinEconomyCurrency> updateCurrency(String id, String name, String denomination, Item icon, BigInteger defaultBalance) {
+        return currencyData.updateCurrency(id, name, denomination, icon, defaultBalance);
     }
 
     public synchronized DataResult<PolyCoinEconomyCurrency> checkCurrencyDeletion(String currencyId) {

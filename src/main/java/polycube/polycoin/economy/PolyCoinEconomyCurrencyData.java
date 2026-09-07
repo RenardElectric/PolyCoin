@@ -1,8 +1,13 @@
 package polycube.polycoin.economy;
 
 import com.mojang.serialization.DataResult;
+import net.minecraft.core.component.DataComponentPatch;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
+import polycube.polycoin.PolyCoin;
 
 import java.math.BigInteger;
 import java.util.*;
@@ -10,9 +15,17 @@ import java.util.*;
 /// Internal currency state. All access is serialized by the owning economy's monitor.
 public final class PolyCoinEconomyCurrencyData {
     public static final BigInteger DEFAULT_BALANCE = BigInteger.valueOf(1000_00L);
-    public static final Item DEFAULT_CURRENCY_ICON = Items.NETHER_STAR;
+    public static final Item DEFAULT_CURRENCY_ICON = Items.SUNFLOWER;
     public static final String DEFAULT_CURRENCY_ID = "polycoin";
-    public static final String DEFAULT_CURRENCY_NAME = "polycoins";
+    public static final String DEFAULT_CURRENCY_NAME = "PolyCoin";
+    public static final String DEFAULT_CURRENCY_DENOMINATION = "℗";
+    public final static ItemStackTemplate DEFAULT_CURRENCY_ICON_TEMPLATE = new ItemStackTemplate(
+            DEFAULT_CURRENCY_ICON,
+            DataComponentPatch.builder()
+                    .set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "default_currency"))
+                    .set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
+                    .build()
+    );
 
     final Map<String, PolyCoinEconomyCurrency> currencies = new TreeMap<>();
     String defaultCurrencyId;
@@ -36,8 +49,8 @@ public final class PolyCoinEconomyCurrencyData {
         return currency == null ? DataResult.error(() -> "Currency not found: " + currencyId) : DataResult.success(currency);
     }
 
-    DataResult<PolyCoinEconomyCurrency> createCurrency(String currencyId, String name, Item icon, BigInteger defaultBalance) {
-        return PolyCoinEconomyCurrency.create(currencyId, name, icon, defaultBalance).flatMap(currency -> {
+    DataResult<PolyCoinEconomyCurrency> createCurrency(String currencyId, String name, String denomination, Item icon, BigInteger defaultBalance) {
+        return PolyCoinEconomyCurrency.create(currencyId, name, denomination, icon, defaultBalance).flatMap(currency -> {
             if (currencies.containsKey(currencyId)) return DataResult.error(() -> "Currency already exists: " + currencyId);
             currencies.put(currencyId, currency);
             revision++;
@@ -48,8 +61,8 @@ public final class PolyCoinEconomyCurrencyData {
         });
     }
 
-    DataResult<PolyCoinEconomyCurrency> updateCurrency(String currencyId, String name, Item icon, BigInteger defaultBalance) {
-        return getCurrency(currencyId).flatMap(currency -> PolyCoinEconomyCurrency.create(currencyId, name, icon, defaultBalance).map(updated -> {
+    DataResult<PolyCoinEconomyCurrency> updateCurrency(String currencyId, String name, String denomination, Item icon, BigInteger defaultBalance) {
+        return getCurrency(currencyId).flatMap(currency -> PolyCoinEconomyCurrency.create(currencyId, name, denomination, icon, defaultBalance).map(updated -> {
             if (currency.displayName().equals(name) && currency.iconItem() == icon && currency.defaultBalance().equals(defaultBalance)) {
                 return currency;
             }

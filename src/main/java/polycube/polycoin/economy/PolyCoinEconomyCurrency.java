@@ -6,8 +6,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.*;
 import polycube.polycoin.PolyCoin;
 
 import java.math.BigDecimal;
@@ -28,33 +27,36 @@ public final class PolyCoinEconomyCurrency
             RecordCodecBuilder.create(instance -> instance.group(
                     EconomyValidation.CURRENCY_ID_CODEC.fieldOf("id").forGetter(currency -> currency.id),
                     EconomyValidation.NAME_CODEC.fieldOf("name").forGetter(currency -> currency.name),
+                    EconomyValidation.NAME_CODEC.fieldOf("denomination").forGetter(currency -> currency.denomination),
                     BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(currency -> currency.icon),
                     EconomyValidation.MONEY_CODEC.fieldOf("default_balance").forGetter(currency -> currency.defaultBalance)
             ).apply(instance, PolyCoinEconomyCurrency::new));
 
     private final String id;
     private final String name;
+    private final String denomination;
     private final Item icon;
     private final BigInteger defaultBalance;
 
-    private PolyCoinEconomyCurrency(String id, String name, Item icon, BigInteger defaultBalance) {
+    private PolyCoinEconomyCurrency(String id, String name, String denomination, Item icon, BigInteger defaultBalance) {
         this.id = id;
         this.name = name;
+        this.denomination = denomination;
         this.icon = icon;
         this.defaultBalance = defaultBalance;
     }
 
-    static DataResult<PolyCoinEconomyCurrency> create(String id, String name, Item icon, BigInteger defaultBalance) {
+    static DataResult<PolyCoinEconomyCurrency> create(String id, String name, String denomination, Item icon, BigInteger defaultBalance) {
         return EconomyValidation.currencyId(id)
                 .flatMap(_ -> EconomyValidation.metadata(name, icon))
                 .flatMap(_ -> EconomyValidation.money(defaultBalance))
-                .map(_ -> new PolyCoinEconomyCurrency(id, name, icon, defaultBalance));
+                .map(_ -> new PolyCoinEconomyCurrency(id, name, denomination, icon, defaultBalance));
     }
 
     static PolyCoinEconomyCurrency defaultCurrency() {
         return new PolyCoinEconomyCurrency(PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ID,
-                PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_NAME, PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ICON,
-                PolyCoinEconomyCurrencyData.DEFAULT_BALANCE);
+                PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_NAME, PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_DENOMINATION,
+                PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ICON, PolyCoinEconomyCurrencyData.DEFAULT_BALANCE);
     }
 
     public String getId() {
@@ -75,9 +77,15 @@ public final class PolyCoinEconomyCurrency
         return name;
     }
 
+    public String denomination() {
+        return denomination;
+    }
+
     @Override
     public ItemStack icon() {
-        return icon.getDefaultInstance();
+        return icon == PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ICON
+                ? PolyCoinEconomyCurrencyData.DEFAULT_CURRENCY_ICON_TEMPLATE.create()
+                : icon.getDefaultInstance();
     }
 
     public Item iconItem() {
@@ -95,7 +103,7 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public Component formatValueComponent(BigInteger value, boolean precise) {
-        return Component.literal(formatValue(value, precise) + " ").append(name());
+        return Component.literal(formatValue(value, precise) + " ").append(denomination);
     }
 
     @Override
