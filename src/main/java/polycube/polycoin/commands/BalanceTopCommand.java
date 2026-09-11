@@ -9,15 +9,14 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.PermissionLevel;
-import net.minecraft.server.players.NameAndId;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
+import polycube.polycoin.util.Helpers;
 
 import java.util.List;
-import java.util.UUID;
 
 public final class BalanceTopCommand extends PolyCoinCommand {
     private static final int ENTRY_LIMIT = 10;
@@ -79,7 +78,7 @@ public final class BalanceTopCommand extends PolyCoinCommand {
                 message.append("\n  ")
                         .append(Component.literal("#" + (index + 1) + " ")
                                 .withStyle(index == 0 ? ChatFormatting.GOLD : ChatFormatting.GRAY))
-                        .append(CommandText.value(ownerName(source, entry.owner())))
+                        .append(CommandText.value(Helpers.playerNames(source.getServer(), entry.owners())))
                         .append(" • ").append(CommandText.value(entry.accountName()))
                         .append(CommandText.muted(" (" + entry.accountId().getPath() + ")"))
                         .append("\n    ").append(CommandText.amount(currency.formatValueComponent(entry.balance(), true)));
@@ -88,16 +87,5 @@ public final class BalanceTopCommand extends PolyCoinCommand {
 
         source.sendSuccess(() -> message, false);
         return 1;
-    }
-
-    private static Component ownerName(CommandSourceStack source, UUID owner) {
-        var onlinePlayer = source.getServer().getPlayerList().getPlayer(owner);
-        if (onlinePlayer != null) {
-            return onlinePlayer.getDisplayName();
-        }
-
-        return Component.literal(source.getServer().services().nameToIdCache().get(owner)
-                .map(NameAndId::name)
-                .orElse(owner.toString()));
     }
 }

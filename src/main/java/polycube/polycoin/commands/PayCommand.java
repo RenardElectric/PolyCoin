@@ -31,6 +31,9 @@ public final class PayCommand extends PolyCoinCommand {
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name) {
         return super.getCommand(name).then(
                 Commands.argument("player", EntityArgument.player())
+                        .suggests((context, builder) -> PolyCoinIdentifierArgument.suggestIds(
+                                context.getSource().getOnlinePlayerNames(), builder, "help"
+                        ))
                         .then(AccountArgument.transferArguments("player", this::pay))
         );
     }
@@ -53,7 +56,7 @@ public final class PayCommand extends PolyCoinCommand {
         var senderAccount = accounts.source();
         var targetAccount = accounts.target();
         var currency = CommandResult.require(senderAccount.getCurrency());
-        CommandResult.require(data.transfer(sender.id(), senderAccount.getId(), target.getUUID(), targetAccount.getId(), amount));
+        CommandResult.require(data.transfer(senderAccount.getId(), targetAccount.getId(), amount));
 
         var formattedAmount = CommandText.amount(currency.formatValueComponent(amount, true));
         var onlineSender = source.getServer().getPlayerList().getPlayer(sender.id());

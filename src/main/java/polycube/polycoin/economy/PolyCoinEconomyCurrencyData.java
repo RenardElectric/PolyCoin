@@ -63,7 +63,8 @@ public final class PolyCoinEconomyCurrencyData {
 
     DataResult<PolyCoinEconomyCurrency> updateCurrency(String currencyId, String name, String denomination, Item icon, BigInteger defaultBalance) {
         return getCurrency(currencyId).flatMap(currency -> PolyCoinEconomyCurrency.create(currencyId, name, denomination, icon, defaultBalance).map(updated -> {
-            if (currency.displayName().equals(name) && currency.iconItem() == icon && currency.defaultBalance().equals(defaultBalance)) {
+            if (currency.displayName().equals(name) && currency.denomination().equals(denomination)
+                    && currency.iconItem() == icon && currency.defaultBalance().equals(defaultBalance)) {
                 return currency;
             }
             currencies.put(currencyId, updated);

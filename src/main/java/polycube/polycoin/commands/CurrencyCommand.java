@@ -150,7 +150,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
     private static ArgumentBuilder<CommandSourceStack, ?> modifyCommand(CommandBuildContext buildContext) {
         return modificationArguments(Commands.literal("modify"), buildContext)
                 .then(modificationArguments(Commands.argument(ID_ARGUMENT, StringArgumentType.string())
-                        .suggests((context, builder) -> CurrencyArgument.suggestCurrencies(context, builder, "name", "icon", "default_balance")), buildContext));
+                        .suggests((context, builder) -> CurrencyArgument.suggestCurrencies(context, builder, "name", "denomination", "icon", "default_balance")), buildContext));
     }
 
     private static <T extends ArgumentBuilder<CommandSourceStack, T>> T modificationArguments(T command, CommandBuildContext buildContext) {
@@ -160,11 +160,11 @@ public final class CurrencyCommand extends PolyCoinCommand {
                         .then(Commands.argument("value", StringArgumentType.string())
                                 .executes(context -> setName(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
                                         StringArgumentType.getString(context, "value")))))
-                .then(Commands.literal("denomination"))
+                .then(Commands.literal("denomination")
                         .executes(context -> queryDenomination(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
                         .then(Commands.argument("value", StringArgumentType.string())
                                 .executes(context -> setDenomination(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT),
-                                        StringArgumentType.getString(context, "value"))))
+                                        StringArgumentType.getString(context, "value")))))
                 .then(Commands.literal("icon")
                         .executes(context -> queryIcon(context.getSource(), PolyCoinIdentifierArgument.getOptionalId(context, ID_ARGUMENT)))
                         .then(Commands.argument("value", ItemArgument.item(buildContext))

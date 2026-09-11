@@ -9,45 +9,57 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.players.NameAndId;
+import net.minecraft.util.Util;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 
 import java.math.BigInteger;
-import java.util.Objects;
-import java.util.UUID;
+import java.util.*;
 
 public final class PolyCoinEconomyAccount implements EconomyAccount {
+    private static final Codec<Set<UUID>> UUIDS_CODEC = Codec.list(UUIDUtil.STRING_CODEC).comapFlatMap(
+            PolyCoinEconomyAccount::decodeOwners,
+            owners -> owners.stream().sorted().toList()
+    );
     public static final Codec<PolyCoinEconomyAccount> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             EconomyValidation.ID_CODEC.fieldOf("id").forGetter(PolyCoinEconomyAccount::getId),
             EconomyValidation.ID_CODEC.fieldOf("currency").forGetter(PolyCoinEconomyAccount::currencyId),
             EconomyValidation.MONEY_CODEC.fieldOf("balance").forGetter(PolyCoinEconomyAccount::balance),
-            UUIDUtil.STRING_CODEC.fieldOf("owner").forGetter(PolyCoinEconomyAccount::owner),
+            UUIDS_CODEC.fieldOf("owners").forGetter(PolyCoinEconomyAccount::owners),
             EconomyValidation.NAME_CODEC.fieldOf("name").forGetter(PolyCoinEconomyAccount::displayName),
             BuiltInRegistries.ITEM.byNameCodec().fieldOf("icon").forGetter(PolyCoinEconomyAccount::iconItem)
     ).apply(instance, PolyCoinEconomyAccount::new));
 
     private final String id;
-    private final UUID owner;
+    private final Set<UUID> owners;
     private final String currencyId;
     private BigInteger balance;
     private String name;
     private Item icon;
     private final @Nullable PolyCoinEconomyData data;
 
-    private PolyCoinEconomyAccount(String id, String currencyId, BigInteger balance, UUID owner, String name, Item icon) {
-        this(id, currencyId, balance, owner, name, icon, null);
+    private static DataResult<Set<UUID>> decodeOwners(List<UUID> encodedOwners) {
+        if (encodedOwners.isEmpty()) return DataResult.error(() -> "An account must have at least one owner");
+        var owners = new TreeSet<>(encodedOwners);
+        if (owners.size() != encodedOwners.size()) return DataResult.error(() -> "An account cannot contain duplicate owners");
+        return DataResult.success(owners);
+    }
+
+    private PolyCoinEconomyAccount(String id, String currencyId, BigInteger balance, Set<UUID> owners, String name, Item icon) {
+        this(id, currencyId, balance, owners, name, icon, null);
     }
 
     private PolyCoinEconomyAccount(
             String id, String currencyId, BigInteger balance,
-            UUID owner, String name, Item icon, @Nullable PolyCoinEconomyData data
+            Set<UUID> owners, String name, Item icon, @Nullable PolyCoinEconomyData data
     ) {
         this.id = id;
         this.currencyId = currencyId;
         this.balance = balance;
-        this.owner = owner;
+        this.owners = new HashSet<>(owners);
         this.name = name;
         this.icon = icon;
         this.data = data;
@@ -55,16 +67,17 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     static DataResult<PolyCoinEconomyAccount> create(
             PolyCoinEconomyData data, String id, String currencyId,
-            UUID owner, String name, Item icon
+            Set<UUID> owners, String name, Item icon
     ) {
+        if (owners.isEmpty()) return DataResult.error(() -> "An account must have at least one owner");
         return EconomyValidation.id(id)
                 .flatMap(_ -> EconomyValidation.id(currencyId))
                 .flatMap(_ -> EconomyValidation.metadata(name, icon))
-                .map(_ -> new PolyCoinEconomyAccount(id, currencyId, BigInteger.ZERO, owner, name, icon, data));
+                .map(_ -> new PolyCoinEconomyAccount(id, currencyId, BigInteger.ZERO, owners, name, icon, data));
     }
 
     static PolyCoinEconomyAccount defaultAccount(PolyCoinEconomyData data, String id, PolyCoinEconomyCurrency currency, UUID owner) {
-        return new PolyCoinEconomyAccount(id, currency.getId(), currency.defaultBalance(), owner,
+        return new PolyCoinEconomyAccount(id, currency.getId(), currency.defaultBalance(), Set.of(owner),
                 PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_NAME, PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON, data);
     }
 
@@ -79,16 +92,18 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     PolyCoinEconomyAccount copy(PolyCoinEconomyData data) {
         synchronized (lock()) {
-            return new PolyCoinEconomyAccount(id, currencyId, balance, owner, name, icon, data);
+            return new PolyCoinEconomyAccount(id, currencyId, balance, owners, name, icon, data);
         }
     }
 
     void setMetadata(String name, Item icon) {
-        var previousName = this.name;
-        var previousIcon = this.icon;
-        this.name = name;
-        this.icon = icon;
-        EconomyLog.accountUpdated(this, currencyId, previousName, previousIcon);
+        synchronized (lock()) {
+            var previousName = this.name;
+            var previousIcon = this.icon;
+            this.name = name;
+            this.icon = icon;
+            EconomyLog.accountUpdated(this, currencyId, previousName, previousIcon);
+        }
     }
 
     boolean usesCurrency(String currencyId) {
@@ -113,7 +128,56 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     public Component name() { return Component.literal(displayName()); }
 
     @Override
-    public UUID owner() { return owner; }
+    public UUID owner() {
+        synchronized (lock()) {
+            return owners.size() == 1 ? owners.iterator().next() : Util.NIL_UUID;
+        }
+    }
+
+    public Set<UUID> owners() {
+        synchronized (lock()) { return Collections.unmodifiableSet(new LinkedHashSet<>(new TreeSet<>(owners))); }
+    }
+
+    boolean isOwnedBy(UUID owner) {
+        synchronized (lock()) { return owners.contains(owner); }
+    }
+
+    DataResult<Collection<NameAndId>> addOwners(Collection<NameAndId> profiles) {
+        synchronized (lock()) {
+            if (!isManaged()) return DataResult.error(() -> "Account is no longer available");
+            var uniqueProfiles = PolyCoinEconomyAccountData.uniqueProfiles(profiles);
+            var addedProfiles = new ArrayList<NameAndId>();
+            for (var profile : uniqueProfiles) {
+                if (owners.contains(profile.id())) continue;
+                owners.add(profile.id());
+                addedProfiles.add(profile);
+                var managedData = Objects.requireNonNull(data);
+                managedData.accountData.ownerAdded(this, profile.id());
+                managedData.setDirty();
+                EconomyLog.accountOwnerAdded(this, profile.id());
+            }
+            return DataResult.success(List.copyOf(addedProfiles));
+        }
+    }
+
+    DataResult<Collection<NameAndId>> removeOwners(Collection<NameAndId> profiles) {
+        synchronized (lock()) {
+            if (!isManaged()) return DataResult.error(() -> "Account is no longer available");
+            var uniqueProfiles = PolyCoinEconomyAccountData.uniqueProfiles(profiles);
+            for (var profile : uniqueProfiles) {
+                if (!owners.contains(profile.id())) return DataResult.error(() -> "Account does not have owner: " + profile.name());
+            }
+            if (owners.size() == uniqueProfiles.size()) return DataResult.error(() -> "Cannot remove all owners of the account");
+            for (var profile : uniqueProfiles) {
+                owners.remove(profile.id());
+                var managedData = Objects.requireNonNull(data);
+                managedData.accountData.ownerRemoved(this, profile.id());
+                managedData.setDirty();
+                EconomyLog.accountOwnerRemoved(this, profile.id());
+            }
+            return DataResult.success(uniqueProfiles);
+        }
+    }
 
     @Override
     public Identifier id() { return Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, id); }
@@ -204,8 +268,10 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
 
     @Override
     public ItemStack accountIcon() {
-        return icon == PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON
-                ? PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON_TEMPLATE.create()
-                : icon.getDefaultInstance();
+        synchronized (lock()) {
+            return icon == PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON
+                    ? PolyCoinEconomyAccountData.DEFAULT_ACCOUNT_ICON_TEMPLATE.create()
+                    : icon.getDefaultInstance();
+        }
     }
 }
