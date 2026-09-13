@@ -4,7 +4,7 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.DynamicCommandExceptionType;
 import com.mojang.serialization.DataResult;
 
-/** Converts economy errors to Brigadier errors only at the command boundary. */
+/// Converts economy errors to Brigadier errors only at the command boundary.
 public final class CommandResult {
     private static final DynamicCommandExceptionType ERROR = new DynamicCommandExceptionType(
             message -> CommandText.error(message.toString())
