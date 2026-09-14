@@ -56,9 +56,6 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Generate data assets
-        run: ./gradlew runDatagen --stacktrace
-
       - name: Build and test
         id: build
         run: ./gradlew build --stacktrace
