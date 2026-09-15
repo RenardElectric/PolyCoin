@@ -140,7 +140,7 @@ joining an existing server can return to [Start playing](#start-playing).
 | Minecraft          | `26.3`                                                         |
 | Java               | `25` or newer                                                  |
 | Fabric Loader      | `0.19.5` or newer                                              |
-| Fabric API         | `0.160.2+26.3` or newer compatible build                       |
+| Fabric API         | `0.160.5+26.3` or newer compatible build                       |
 | Common Economy API | Bundled inside the PolyCoin JAR; no separate download required |
 
 ### Installing PolyCoin
