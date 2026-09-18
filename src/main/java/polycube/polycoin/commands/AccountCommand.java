@@ -26,15 +26,19 @@ import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 import polycube.polycoin.util.Helpers;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.commands.PolyCommand;
+import polycube.polycore.text.TextComponents;
 
 import java.util.Collection;
 import java.util.Set;
 
-public final class AccountCommand extends PolyCoinCommand {
+public final class AccountCommand extends PolyCommand {
     private static final String ID_ARGUMENT = "account";
 
     public AccountCommand() {
         super(
+                PolyCoin.MOD_ID,
                 "account",
                 "Lists, creates, deletes, inspects, and modifies your accounts",
                 "list [currencyId] | info [id] | default [id] | transfer <amount> [from <id>] [to <id>] | create <id> <name> <icon> [currencyId] | delete [id] [confirm] | modify [id] <name|icon|currencyId> [value] | modify [id] owners [add|remove <player>]",
@@ -87,9 +91,9 @@ public final class AccountCommand extends PolyCoinCommand {
         }
 
         var accounts = filter == null ? data.getAccounts(owner.id()) : data.getAccounts(owner.id(), filter.getId());
-        var message = CommandText.header(!AccountArgument.isActingAs(context) ? "Your accounts" : "Accounts for " + owner.name());
+        var message = TextComponents.header(!AccountArgument.isActingAs(context) ? "Your accounts" : "Accounts for " + owner.name());
         if (filter != null) message.append(" • ").append(CommandText.currency(filter));
-        message.append(CommandText.muted(" (" + accounts.size() + ")"));
+        message.append(TextComponents.muted(" (" + accounts.size() + ")"));
 
         if (accounts.isEmpty()) {
             message.append("\nNo accounts found.");
@@ -97,8 +101,8 @@ public final class AccountCommand extends PolyCoinCommand {
             for (PolyCoinEconomyAccount account : accounts.values()) {
                 PolyCoinEconomyCurrency currency = CommandResult.require(account.getCurrency());
                 message.append("\n  • ").append(CommandText.account(account));
-                if (data.isDefaultAccount(owner.id(), account.getId())) message.append(CommandText.badge());
-                message.append("\n    ").append(CommandText.amount(currency.formatValueComponent(account.balance(), true)));
+                if (data.isDefaultAccount(owner.id(), account.getId())) message.append(TextComponents.badge());
+                message.append("\n    ").append(TextComponents.amount(currency.formatValueComponent(account.balance(), true)));
             }
         }
 
@@ -112,14 +116,14 @@ public final class AccountCommand extends PolyCoinCommand {
 
         PolyCoinEconomyAccount account = selection.account();
         PolyCoinEconomyCurrency currency = CommandResult.require(account.getCurrency());
-        var message = CommandText.header("Account details")
-                .append(CommandText.field("Name", CommandText.value(account.name())))
-                .append(CommandText.field("ID", CommandText.value(account.id())))
-                .append(CommandText.field("Owners", CommandText.value(Helpers.playerNames(selection.owners()))))
-                .append(CommandText.field("Icon", CommandText.value(BuiltInRegistries.ITEM.getKey(account.iconItem()))))
-                .append(CommandText.field("Currency", CommandText.currency(currency)))
-                .append(CommandText.field("Balance", CommandText.amount(currency.formatValueComponent(account.balance(), true))))
-                .append(CommandText.field("Default for at least one owner", CommandText.yesNo(selection.data().isDefaultAccount(account.getId()))));
+        var message = TextComponents.header("Account details")
+                .append(TextComponents.field("Name", TextComponents.value(account.name())))
+                .append(TextComponents.field("ID", TextComponents.value(account.id())))
+                .append(TextComponents.field("Owners", TextComponents.value(Helpers.playerNames(selection.owners()))))
+                .append(TextComponents.field("Icon", TextComponents.value(BuiltInRegistries.ITEM.getKey(account.iconItem()))))
+                .append(TextComponents.field("Currency", CommandText.currency(currency)))
+                .append(TextComponents.field("Balance", TextComponents.amount(currency.formatValueComponent(account.balance(), true))))
+                .append(TextComponents.field("Default for at least one owner", TextComponents.yesNo(selection.data().isDefaultAccount(account.getId()))));
 
         source.sendSuccess(() -> message, false);
         return 1;
@@ -130,10 +134,10 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(context.getSource().getServer());
         PolyCoinEconomyAccount account = AccountArgument.getAccount(data, owner.id(), rawId);
         if (rawId != null) CommandResult.require(data.setDefaultAccount(owner.id(), account.getId()));
-        var message = (rawId == null ? CommandText.header("Default account") : CommandText.success("Default account updated"))
-                .append(CommandText.field("Owner", CommandText.value(owner.name())))
-                .append(CommandText.field("Account", CommandText.account(account)))
-                .append(CommandText.field("Currency", CommandText.currency(CommandResult.require(account.getCurrency()))));
+        var message = (rawId == null ? TextComponents.header("Default account") : TextComponents.success("Default account updated"))
+                .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
+                .append(TextComponents.field("Account", CommandText.account(account)))
+                .append(TextComponents.field("Currency", CommandText.currency(CommandResult.require(account.getCurrency()))));
         context.getSource().sendSuccess(() -> message, rawId != null && AccountArgument.isActingAs(context));
         return 1;
     }
@@ -152,11 +156,11 @@ public final class AccountCommand extends PolyCoinCommand {
         );
         var currency = CommandResult.require(accounts.source().getCurrency());
         CommandResult.require(data.transfer(accounts.source().getId(), accounts.target().getId(), amount));
-        var message = CommandText.success("Transfer complete")
-                .append(CommandText.field("Amount", CommandText.amount(currency.formatValueComponent(amount, true))))
-                .append(CommandText.field("From", CommandText.account(accounts.source())))
-                .append(CommandText.field("To", CommandText.account(accounts.target())))
-                .append(CommandText.field("Owner", CommandText.value(owner.name())));
+        var message = TextComponents.success("Transfer complete")
+                .append(TextComponents.field("Amount", TextComponents.amount(currency.formatValueComponent(amount, true))))
+                .append(TextComponents.field("From", CommandText.account(accounts.source())))
+                .append(TextComponents.field("To", CommandText.account(accounts.target())))
+                .append(TextComponents.field("Owner", TextComponents.value(owner.name())));
         context.getSource().sendSuccess(() -> message, AccountArgument.isActingAs(context));
         return 1;
     }
@@ -250,10 +254,10 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyAccount account = CommandResult.require(data.createAccount(Set.of(owner.id()), id, name, icon, currency.getId()));
 
         source.sendSuccess(
-                () -> CommandText.success("Account created")
-                        .append(CommandText.field("Account", CommandText.account(account)))
-                        .append(CommandText.field("Owner", CommandText.value(owner.name())))
-                        .append(CommandText.field("Balance", CommandText.amount(currency.formatValueComponent(account.balance(), true)))),
+                () -> TextComponents.success("Account created")
+                        .append(TextComponents.field("Account", CommandText.account(account)))
+                        .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
+                        .append(TextComponents.field("Balance", TextComponents.amount(currency.formatValueComponent(account.balance(), true)))),
                 AccountArgument.isActingAs(context)
         );
         return 1;
@@ -266,13 +270,13 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyAccount account = AccountArgument.getAccount(data, owner.id(), rawId);
         if (data.isDefaultAccount(account.getId())) {
-            source.sendFailure(CommandText.error("The default account for this currency cannot be deleted. Choose another default first."));
+            source.sendFailure(TextComponents.error("The default account for this currency cannot be deleted. Choose another default first."));
             return 0;
         }
-        source.sendFailure(CommandText.confirmation(
+        source.sendFailure(TextComponents.confirmation(
                 CommandText.account(account),
-                CommandText.field("Owners affected", CommandText.value(Helpers.playerNames(source.getServer(), account.owners())))
-                        .append(CommandText.field("Balance to be lost", CommandText.amount(account.formattedBalance()))),
+                TextComponents.field("Owners affected", TextComponents.value(Helpers.playerNames(source.getServer(), account.owners())))
+                        .append(TextComponents.field("Balance to be lost", TextComponents.amount(account.formattedBalance()))),
                 deletionCommand(context, owner, account.getId())
         ));
         return 0;
@@ -286,9 +290,9 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyAccount account = AccountArgument.getAccount(data, owner.id(), rawId);
         var deleted = CommandResult.require(data.deleteAccount(account.getId()));
 
-        source.sendSuccess(() -> CommandText.success("Account deleted")
-                .append(CommandText.field("Account", CommandText.value(deleted.getId())))
-                .append(CommandText.field("Owners affected", CommandText.value(Helpers.playerNames(source.getServer(), deleted.owners())))),
+        source.sendSuccess(() -> TextComponents.success("Account deleted")
+                .append(TextComponents.field("Account", TextComponents.value(deleted.getId())))
+                .append(TextComponents.field("Owners affected", TextComponents.value(Helpers.playerNames(source.getServer(), deleted.owners())))),
                 AccountArgument.isActingAs(context));
         return 1;
     }
@@ -297,7 +301,7 @@ public final class AccountCommand extends PolyCoinCommand {
         CommandSourceStack source = context.getSource();
         AccountSelection selection = findAccount(context, rawId);
         source.sendSuccess(
-                () -> CommandText.property(CommandText.account(selection.account()), "Name", CommandText.value(selection.account().name())),
+                () -> TextComponents.property(CommandText.account(selection.account()), "Name", TextComponents.value(selection.account().name())),
                 false
         );
         return 1;
@@ -309,8 +313,8 @@ public final class AccountCommand extends PolyCoinCommand {
         PolyCoinEconomyAccount account = selection.account();
         var updated = CommandResult.require(selection.data().updateAccount(account.getId(), value, account.iconItem(), account.currencyId()));
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.account(updated), "Name", CommandText.value(value))
-                        .append(CommandText.field("Owners", CommandText.value(Helpers.playerNames(selection.owners())))),
+                () -> TextComponents.updated(CommandText.account(updated), "Name", TextComponents.value(value))
+                        .append(TextComponents.field("Owners", TextComponents.value(Helpers.playerNames(selection.owners())))),
                 AccountArgument.isActingAs(context)
         );
         return 1;
@@ -321,7 +325,7 @@ public final class AccountCommand extends PolyCoinCommand {
         AccountSelection selection = findAccount(context, rawId);
         Identifier iconId = BuiltInRegistries.ITEM.getKey(selection.account().iconItem());
         source.sendSuccess(
-                () -> CommandText.property(CommandText.account(selection.account()), "Icon", CommandText.value(iconId)),
+                () -> TextComponents.property(CommandText.account(selection.account()), "Icon", TextComponents.value(iconId)),
                 false
         );
         return 1;
@@ -334,8 +338,8 @@ public final class AccountCommand extends PolyCoinCommand {
         var updated = CommandResult.require(selection.data().updateAccount(account.getId(), account.displayName(), value, account.currencyId()));
         Identifier iconId = BuiltInRegistries.ITEM.getKey(value);
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.account(updated), "Icon", CommandText.value(iconId))
-                        .append(CommandText.field("Owners", CommandText.value(Helpers.playerNames(selection.owners())))),
+                () -> TextComponents.updated(CommandText.account(updated), "Icon", TextComponents.value(iconId))
+                        .append(TextComponents.field("Owners", TextComponents.value(Helpers.playerNames(selection.owners())))),
                 AccountArgument.isActingAs(context)
         );
         return 1;
@@ -346,7 +350,7 @@ public final class AccountCommand extends PolyCoinCommand {
         AccountSelection selection = findAccount(context, rawId);
         var currency = CommandResult.require(selection.account().getCurrency());
         source.sendSuccess(
-                () -> CommandText.property(CommandText.account(selection.account()), "Currency", CommandText.currency(currency)),
+                () -> TextComponents.property(CommandText.account(selection.account()), "Currency", CommandText.currency(currency)),
                 false
         );
         return 1;
@@ -362,8 +366,8 @@ public final class AccountCommand extends PolyCoinCommand {
                 account.getId(), account.displayName(), account.iconItem(), currency.getId()
         ));
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.account(updated), "Currency", CommandText.currency(currency))
-                        .append(CommandText.field("Owners", CommandText.value(Helpers.playerNames(selection.owners())))),
+                () -> TextComponents.updated(CommandText.account(updated), "Currency", CommandText.currency(currency))
+                        .append(TextComponents.field("Owners", TextComponents.value(Helpers.playerNames(selection.owners())))),
                 AccountArgument.isActingAs(context)
         );
         return 1;
@@ -374,7 +378,7 @@ public final class AccountCommand extends PolyCoinCommand {
         AccountSelection selection = findAccount(context, rawId);
         var owners = Helpers.playerNames(source.getServer(), selection.account().owners());
         source.sendSuccess(
-                () -> CommandText.property(CommandText.account(selection.account()), "Owners", CommandText.value(owners)),
+                () -> TextComponents.property(CommandText.account(selection.account()), "Owners", TextComponents.value(owners)),
                 false
         );
         return 1;
@@ -387,7 +391,7 @@ public final class AccountCommand extends PolyCoinCommand {
         var updated = CommandResult.require(selection.data().addAccountOwners(account.getId(), newOwners));
         var owners = Helpers.playerNames(source.getServer(), updated.owners());
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.account(updated), "Owners", CommandText.value(owners)),
+                () -> TextComponents.updated(CommandText.account(updated), "Owners", TextComponents.value(owners)),
                 AccountArgument.isActingAs(context)
         );
         return 1;
@@ -400,7 +404,7 @@ public final class AccountCommand extends PolyCoinCommand {
         var updated = CommandResult.require(selection.data().removeAccountOwners(account.getId(), ownersToRemove));
         var owners = Helpers.playerNames(source.getServer(), updated.owners());
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.account(updated), "Owners", CommandText.value(owners)),
+                () -> TextComponents.updated(CommandText.account(updated), "Owners", TextComponents.value(owners)),
                 AccountArgument.isActingAs(context)
         );
         return 1;

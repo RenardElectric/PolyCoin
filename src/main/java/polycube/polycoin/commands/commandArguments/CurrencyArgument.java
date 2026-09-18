@@ -10,15 +10,16 @@ import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.CommandText;
-import polycube.polycoin.commands.CommandResult;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.text.TextComponents;
 
 import java.util.concurrent.CompletableFuture;
 
 public final class CurrencyArgument {
     private static final DynamicCommandExceptionType INVALID_CURRENCY = new DynamicCommandExceptionType(
-            id -> CommandText.error("Invalid currency id: " + id)
+            id -> TextComponents.error("Invalid currency id: " + id)
     );
 
     private CurrencyArgument() {}

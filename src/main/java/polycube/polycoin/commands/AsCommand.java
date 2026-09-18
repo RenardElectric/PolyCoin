@@ -6,16 +6,23 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.server.permissions.PermissionLevel;
+import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
+import polycube.polycore.commands.PolyCommand;
 
 import java.util.List;
 
-public final class AsCommand extends PolyCoinCommand {
-    private final List<PolyCoinCommand> playerCommands;
+public final class AsCommand extends PolyCommand {
+    private final List<PolyCommand> playerCommands;
 
-    public AsCommand(PolyCoinCommand... playerCommands) {
-        super("as", "Runs player commands for another player, including offline players",
-                "<player> <account|balance|pay> ...", PermissionLevel.GAMEMASTERS);
+    public AsCommand(PolyCommand... playerCommands) {
+        super(
+                PolyCoin.MOD_ID,
+                "as",
+                "Runs player commands for another player, including offline players",
+                "<player> <account|balance|pay> ...",
+                PermissionLevel.GAMEMASTERS
+        );
         this.playerCommands = List.of(playerCommands);
     }
 

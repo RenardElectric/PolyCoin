@@ -15,15 +15,19 @@ import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 import polycube.polycoin.util.Helpers;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.commands.PolyCommand;
+import polycube.polycore.text.TextComponents;
 
 import java.util.List;
 
-public final class BalanceTopCommand extends PolyCoinCommand {
+public final class BalanceTopCommand extends PolyCommand {
     private static final int ENTRY_LIMIT = 10;
     private static final int MAX_ENTRY_LIMIT = 100;
 
     public BalanceTopCommand() {
         super(
+                PolyCoin.MOD_ID,
                 "balancetop",
                 "Displays the top accounts by balance for a given currency.",
                 "[currency] | <limit:1-100> [currency]",
@@ -66,9 +70,9 @@ public final class BalanceTopCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, currencyId);
         var entries = CommandResult.require(data.getTopAccounts(currency.getId(), limit));
-        var message = CommandText.header("Top balances")
-                .append(CommandText.field("Currency", CommandText.currency(currency)))
-                .append(CommandText.muted(" • " + entries.size() + " account(s)"));
+        var message = TextComponents.header("Top balances")
+                .append(TextComponents.field("Currency", CommandText.currency(currency)))
+                .append(TextComponents.muted(" • " + entries.size() + " account(s)"));
 
         if (entries.isEmpty()) {
             message.append("\nNo accounts found.");
@@ -78,10 +82,10 @@ public final class BalanceTopCommand extends PolyCoinCommand {
                 message.append("\n  ")
                         .append(Component.literal("#" + (index + 1) + " ")
                                 .withStyle(index == 0 ? ChatFormatting.GOLD : ChatFormatting.GRAY))
-                        .append(CommandText.value(Helpers.playerNames(source.getServer(), entry.owners())))
-                        .append(" • ").append(CommandText.value(entry.accountName()))
-                        .append(CommandText.muted(" (" + entry.accountId().getPath() + ")"))
-                        .append("\n    ").append(CommandText.amount(currency.formatValueComponent(entry.balance(), true)));
+                        .append(TextComponents.value(Helpers.playerNames(source.getServer(), entry.owners())))
+                        .append(" • ").append(TextComponents.value(entry.accountName()))
+                        .append(TextComponents.muted(" (" + entry.accountId().getPath() + ")"))
+                        .append("\n    ").append(TextComponents.amount(currency.formatValueComponent(entry.balance(), true)));
             }
         }
 

@@ -10,10 +10,8 @@ import polycube.polycoin.commands.BalanceTopCommand;
 import polycube.polycoin.commands.AccountCommand;
 import polycube.polycoin.commands.AsCommand;
 import polycube.polycoin.commands.CurrencyCommand;
-import polycube.polycoin.commands.HelpCommand;
 import polycube.polycoin.commands.PayCommand;
-import polycube.polycoin.commands.PolyCoinCommand;
-import polycube.polycoin.commands.PolyCoinCommands;
+import polycube.polycore.commands.PolyCommands;
 
 public class PolyCoin implements ModInitializer {
 
@@ -29,15 +27,16 @@ public class PolyCoin implements ModInitializer {
         var account = new AccountCommand();
         var balance = new BalanceCommand();
         var pay = new PayCommand();
-        PolyCoinCommand[] commands = {
-                new HelpCommand(),
+        PolyCommands.registerCommands(
+                MOD_ID,
+                "PolyCoind",
+                LOGGER,
                 account,
                 new AsCommand(account, balance, pay),
                 balance,
                 new BalanceTopCommand(),
                 new CurrencyCommand(),
                 pay
-        };
-        PolyCoinCommands.registerCommands(commands);
+        );
     }
 }

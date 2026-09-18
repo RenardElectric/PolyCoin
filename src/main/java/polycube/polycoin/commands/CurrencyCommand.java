@@ -19,14 +19,18 @@ import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.commands.PolyCommand;
+import polycube.polycore.text.TextComponents;
 
 import java.math.BigInteger;
 
-public final class CurrencyCommand extends PolyCoinCommand {
+public final class CurrencyCommand extends PolyCommand {
     private static final String ID_ARGUMENT = "currency";
 
     public CurrencyCommand() {
         super(
+                PolyCoin.MOD_ID,
                 "currency",
                 "Lists and inspects currencies; changing currencies and the default is admin-only",
                 "list | info [id] | default [id] | create <id> <name> <denomination> <icon> <default_balance> | delete [id] [confirm] | modify [id] <name|denomination|icon|default_balance> [value]",
@@ -66,7 +70,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
     private static int listCurrencies(CommandSourceStack source) {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         var currencies = data.getCurrencies();
-        var message = CommandText.header("Currencies").append(CommandText.muted(" (" + currencies.size() + ")"));
+        var message = TextComponents.header("Currencies").append(TextComponents.muted(" (" + currencies.size() + ")"));
 
         if (currencies.isEmpty()) {
             message.append("\nNo currencies found.");
@@ -74,7 +78,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
             for (PolyCoinEconomyCurrency currency : currencies.values()) {
                 message.append("\n  • ").append(CommandText.currency(currency));
                 if (data.isDefaultCurrency(currency.getId())) {
-                    message.append(CommandText.badge());
+                    message.append(TextComponents.badge());
                 }
             }
         }
@@ -88,15 +92,15 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
         var statistics = CommandResult.require(data.getCurrencyStatistics(currency.getId()));
 
-        var message = CommandText.header("Currency details")
-                .append(CommandText.field("Name", CommandText.value(currency.name())))
-                .append(CommandText.field("Denomination", CommandText.value(currency.denomination())))
-                .append(CommandText.field("ID", CommandText.value(currency.id())))
-                .append(CommandText.field("Icon", CommandText.value(BuiltInRegistries.ITEM.getKey(currency.iconItem()))))
-                .append(CommandText.field("Starting balance", CommandText.amount(currency.formatValueComponent(currency.defaultBalance(), true))))
-                .append(CommandText.field("Accounts", CommandText.value(statistics.accountCount())))
-                .append(CommandText.field("Money in circulation", CommandText.amount(currency.formatValueComponent(statistics.totalBalance(), true))))
-                .append(CommandText.field("Default currency", CommandText.yesNo(data.isDefaultCurrency(currency.getId()))));
+        var message = TextComponents.header("Currency details")
+                .append(TextComponents.field("Name", TextComponents.value(currency.name())))
+                .append(TextComponents.field("Denomination", TextComponents.value(currency.denomination())))
+                .append(TextComponents.field("ID", TextComponents.value(currency.id())))
+                .append(TextComponents.field("Icon", TextComponents.value(BuiltInRegistries.ITEM.getKey(currency.iconItem()))))
+                .append(TextComponents.field("Starting balance", TextComponents.amount(currency.formatValueComponent(currency.defaultBalance(), true))))
+                .append(TextComponents.field("Accounts", TextComponents.value(statistics.accountCount())))
+                .append(TextComponents.field("Money in circulation", TextComponents.amount(currency.formatValueComponent(statistics.totalBalance(), true))))
+                .append(TextComponents.field("Default currency", TextComponents.yesNo(data.isDefaultCurrency(currency.getId()))));
 
         source.sendSuccess(() -> message, false);
         return 1;
@@ -106,8 +110,8 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
         if (rawId != null) CommandResult.require(data.setDefaultCurrency(currency.getId()));
-        var message = (rawId == null ? CommandText.header("Default currency") : CommandText.success("Default currency updated"))
-                .append(CommandText.field("Currency", CommandText.currency(currency)));
+        var message = (rawId == null ? TextComponents.header("Default currency") : TextComponents.success("Default currency updated"))
+                .append(TextComponents.field("Currency", CommandText.currency(currency)));
         if (rawId != null) message.append("\nExisting accounts and balances are unchanged.");
         source.sendSuccess(() -> message, rawId != null);
         return 1;
@@ -187,9 +191,9 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyCurrency created = CommandResult.require(data.createCurrency(id, name, denomination, icon, defaultBalance));
 
         source.sendSuccess(
-                () -> CommandText.success("Currency created")
-                        .append(CommandText.field("Currency", CommandText.currency(created)))
-                        .append(CommandText.field("Starting balance", CommandText.amount(created.formatValueComponent(defaultBalance, true)))),
+                () -> TextComponents.success("Currency created")
+                        .append(TextComponents.field("Currency", CommandText.currency(created)))
+                        .append(TextComponents.field("Starting balance", TextComponents.amount(created.formatValueComponent(defaultBalance, true)))),
                 true
         );
         return 1;
@@ -201,9 +205,9 @@ public final class CurrencyCommand extends PolyCoinCommand {
         CommandResult.require(data.checkCurrencyDeletion(currency.getId()));
         int accountCount = CommandResult.require(data.countAccounts(currency.getId()));
         String id = currency.getId();
-        source.sendFailure(CommandText.confirmation(
+        source.sendFailure(TextComponents.confirmation(
                 CommandText.currency(currency),
-                CommandText.field("Linked accounts to be deleted", CommandText.value(accountCount))
+                TextComponents.field("Linked accounts to be deleted", TextComponents.value(accountCount))
                         .append("\nAll balances in these accounts will be lost."),
                 "/" + PolyCoin.MOD_ID + " currency delete \"" + id + "\" confirm"
         ));
@@ -216,9 +220,9 @@ public final class CurrencyCommand extends PolyCoinCommand {
         var result = CommandResult.require(data.deleteCurrency(currency.getId()));
 
         source.sendSuccess(
-                () -> CommandText.success("Currency deleted")
-                        .append(CommandText.field("Currency", CommandText.currency(result.currency())))
-                        .append(CommandText.field("Accounts removed", CommandText.value(result.deletedAccounts()))),
+                () -> TextComponents.success("Currency deleted")
+                        .append(TextComponents.field("Currency", CommandText.currency(result.currency())))
+                        .append(TextComponents.field("Accounts removed", TextComponents.value(result.deletedAccounts()))),
                 true
         );
         return 1;
@@ -226,7 +230,7 @@ public final class CurrencyCommand extends PolyCoinCommand {
 
     private static int queryName(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
-        source.sendSuccess(() -> CommandText.property(CommandText.currency(currency), "Name", CommandText.value(currency.name())), false);
+        source.sendSuccess(() -> TextComponents.property(CommandText.currency(currency), "Name", TextComponents.value(currency.name())), false);
         return 1;
     }
 
@@ -234,13 +238,13 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
         var updated = CommandResult.require(data.updateCurrency(currency.getId(), value, currency.denomination(), currency.iconItem(), currency.defaultBalance()));
-        source.sendSuccess(() -> CommandText.updated(CommandText.currency(updated), "Name", CommandText.value(value)), true);
+        source.sendSuccess(() -> TextComponents.updated(CommandText.currency(updated), "Name", TextComponents.value(value)), true);
         return 1;
     }
 
     private static int queryDenomination(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
-        source.sendSuccess(() -> CommandText.property(CommandText.currency(currency), "Denomination", CommandText.value(currency.denomination())), false);
+        source.sendSuccess(() -> TextComponents.property(CommandText.currency(currency), "Denomination", TextComponents.value(currency.denomination())), false);
         return 1;
     }
 
@@ -248,14 +252,14 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
         var updated = CommandResult.require(data.updateCurrency(currency.getId(), currency.displayName(), value, currency.iconItem(), currency.defaultBalance()));
-        source.sendSuccess(() -> CommandText.updated(CommandText.currency(updated), "Denomination", CommandText.value(value)), true);
+        source.sendSuccess(() -> TextComponents.updated(CommandText.currency(updated), "Denomination", TextComponents.value(value)), true);
         return 1;
     }
 
     private static int queryIcon(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
         Identifier itemId = BuiltInRegistries.ITEM.getKey(currency.iconItem());
-        source.sendSuccess(() -> CommandText.property(CommandText.currency(currency), "Icon", CommandText.value(itemId)), false);
+        source.sendSuccess(() -> TextComponents.property(CommandText.currency(currency), "Icon", TextComponents.value(itemId)), false);
         return 1;
     }
 
@@ -264,15 +268,15 @@ public final class CurrencyCommand extends PolyCoinCommand {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, rawId);
         var updated = CommandResult.require(data.updateCurrency(currency.getId(), currency.displayName(), currency.denomination(), value, currency.defaultBalance()));
         Identifier itemId = BuiltInRegistries.ITEM.getKey(value);
-        source.sendSuccess(() -> CommandText.updated(CommandText.currency(updated), "Icon", CommandText.value(itemId)), true);
+        source.sendSuccess(() -> TextComponents.updated(CommandText.currency(updated), "Icon", TextComponents.value(itemId)), true);
         return 1;
     }
 
     private static int queryDefaultBalance(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
         PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(source, rawId);
         source.sendSuccess(
-                () -> CommandText.property(CommandText.currency(currency), "Starting balance",
-                        CommandText.amount(currency.formatValueComponent(currency.defaultBalance(), true))),
+                () -> TextComponents.property(CommandText.currency(currency), "Starting balance",
+                        TextComponents.amount(currency.formatValueComponent(currency.defaultBalance(), true))),
                 false
         );
         return 1;
@@ -288,8 +292,8 @@ public final class CurrencyCommand extends PolyCoinCommand {
         ));
 
         source.sendSuccess(
-                () -> CommandText.updated(CommandText.currency(updated), "Starting balance",
-                        CommandText.amount(updated.formatValueComponent(value, true)))
+                () -> TextComponents.updated(CommandText.currency(updated), "Starting balance",
+                        TextComponents.amount(updated.formatValueComponent(value, true)))
                         .append("\nExisting account balances are unchanged."),
                 true
         );

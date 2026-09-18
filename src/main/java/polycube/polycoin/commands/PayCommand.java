@@ -13,12 +13,16 @@ import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
 import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.commands.PolyCommand;
+import polycube.polycore.text.TextComponents;
 
 import java.math.BigInteger;
 
-public final class PayCommand extends PolyCoinCommand {
+public final class PayCommand extends PolyCommand {
     public PayCommand() {
         super(
+                PolyCoin.MOD_ID,
                 "pay",
                 "Pays another online player from one of your accounts",
                 "<player> <amount> [from <account>] [to <account>]",
@@ -47,7 +51,7 @@ public final class PayCommand extends PolyCoinCommand {
         String targetAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "to");
 
         if (sender.id().equals(target.getUUID())) {
-            source.sendFailure(CommandText.error("You cannot pay yourself. Use account transfer to move money between your accounts."));
+            source.sendFailure(TextComponents.error("You cannot pay yourself. Use account transfer to move money between your accounts."));
             return 0;
         }
 
@@ -58,24 +62,24 @@ public final class PayCommand extends PolyCoinCommand {
         var currency = CommandResult.require(senderAccount.getCurrency());
         CommandResult.require(data.transfer(senderAccount.getId(), targetAccount.getId(), amount));
 
-        var formattedAmount = CommandText.amount(currency.formatValueComponent(amount, true));
+        var formattedAmount = TextComponents.amount(currency.formatValueComponent(amount, true));
         var onlineSender = source.getServer().getPlayerList().getPlayer(sender.id());
         var senderName = onlineSender == null ? Component.literal(sender.name()) : onlineSender.getDisplayName();
         source.sendSuccess(
-                () -> CommandText.success("Paid ")
+                () -> TextComponents.success("Paid ")
                         .append(formattedAmount)
-                        .append(" to ").append(CommandText.value(target.getDisplayName()))
-                        .append(CommandText.field("From account", CommandText.account(senderAccount)))
+                        .append(" to ").append(TextComponents.value(target.getDisplayName()))
+                        .append(TextComponents.field("From account", CommandText.account(senderAccount)))
                         .append(AccountArgument.isActingAs(context)
-                                ? CommandText.field("On behalf of", CommandText.value(sender.name())) : Component.empty()),
+                                ? TextComponents.field("On behalf of", TextComponents.value(sender.name())) : Component.empty()),
                 AccountArgument.isActingAs(context)
         );
         target.sendSystemMessage(
-                CommandText.success("Received ")
+                TextComponents.success("Received ")
                         .append(formattedAmount)
                         .append(" from ")
-                        .append(CommandText.value(senderName))
-                        .append(CommandText.field("To account", CommandText.account(targetAccount)))
+                        .append(TextComponents.value(senderName))
+                        .append(TextComponents.field("To account", CommandText.account(targetAccount)))
         );
         return 1;
     }

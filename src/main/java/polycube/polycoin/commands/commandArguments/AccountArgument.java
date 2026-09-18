@@ -17,10 +17,10 @@ import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
-import polycube.polycoin.commands.CommandResult;
-import polycube.polycoin.commands.CommandText;
 import polycube.polycoin.economy.PolyCoinEconomyAccount;
 import polycube.polycoin.economy.PolyCoinEconomyData;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.text.TextComponents;
 
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -28,13 +28,13 @@ import java.util.concurrent.CompletableFuture;
 public final class AccountArgument {
     public static final String OWNER_ARGUMENT = "asPlayer";
     private static final SimpleCommandExceptionType SINGLE_OWNER_REQUIRED = new SimpleCommandExceptionType(
-            CommandText.error("Select exactly one account owner.")
+            TextComponents.error("Select exactly one account owner.")
     );
     private static final DynamicCommandExceptionType INVALID_ACCOUNT = new DynamicCommandExceptionType(
-            id -> CommandText.error("Invalid account id: " + id)
+            id -> TextComponents.error("Invalid account id: " + id)
     );
     private static final DynamicCommandExceptionType MISSING_DEFAULT = new DynamicCommandExceptionType(
-            currency -> CommandText.error("No default account for currency: " + currency)
+            currency -> TextComponents.error("No default account for currency: " + currency)
     );
 
     private AccountArgument() {}

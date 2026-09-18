@@ -2,18 +2,18 @@ package polycube.polycoin.commands.commandArguments;
 
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
-import polycube.polycoin.commands.CommandText;
-import polycube.polycoin.commands.CommandResult;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.text.TextComponents;
 
 import java.math.BigInteger;
 
 public final class AmountArgument {
     private static final SimpleCommandExceptionType NEGATIVE_AMOUNT = new SimpleCommandExceptionType(
-            CommandText.error("The amount cannot be negative.")
+            TextComponents.error("The amount cannot be negative.")
     );
     private static final SimpleCommandExceptionType NON_POSITIVE_AMOUNT = new SimpleCommandExceptionType(
-            CommandText.error("The amount must be greater than zero.")
+            TextComponents.error("The amount must be greater than zero.")
     );
 
     private AmountArgument() {}

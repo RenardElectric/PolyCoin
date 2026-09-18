@@ -13,15 +13,24 @@ import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
 import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
+import polycube.polycore.commands.CommandResult;
+import polycube.polycore.commands.PolyCommand;
+import polycube.polycore.text.TextComponents;
 
 import java.util.Locale;
 
-public final class BalanceCommand extends PolyCoinCommand {
+public final class BalanceCommand extends PolyCommand {
     private enum BalanceOperation { SET, ADD, REMOVE }
 
     public BalanceCommand() {
-        super("balance", "Displays a player's balance; set, add, and remove are admin-only",
-                "[account] [<set|add|remove> <amount>]", PermissionLevel.ALL, true);
+        super(
+                PolyCoin.MOD_ID,
+                "balance",
+                "Displays a player's balance; set, add, and remove are admin-only",
+                "[account] [<set|add|remove> <amount>]",
+                PermissionLevel.ALL,
+                true
+        );
     }
 
     @Override
@@ -46,10 +55,10 @@ public final class BalanceCommand extends PolyCoinCommand {
         var owner = AccountArgument.getOwner(context);
         var data = PolyCoin.INSTANCE.getData(source.getServer());
         var account = AccountArgument.getAccount(data, owner.id(), accountId);
-        var message = CommandText.header("Balance")
-                .append(CommandText.field("Owner", CommandText.value(owner.name())))
-                .append(CommandText.field("Account", CommandText.account(account)))
-                .append(CommandText.field("Available", CommandText.amount(account.formattedBalance())));
+        var message = TextComponents.header("Balance")
+                .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
+                .append(TextComponents.field("Account", CommandText.account(account)))
+                .append(TextComponents.field("Available", TextComponents.amount(account.formattedBalance())));
         source.sendSuccess(() -> message, false);
         return 1;
     }
@@ -73,15 +82,15 @@ public final class BalanceCommand extends PolyCoinCommand {
                         ? account.increaseBalance(amount)
                         : account.decreaseBalance(amount);
                 if (transaction.isFailure()) {
-                    source.sendFailure(CommandText.error(transaction.message()));
+                    source.sendFailure(TextComponents.error(transaction.message()));
                     return 0;
                 }
             }
-            message = CommandText.success("Balance updated")
-                    .append(CommandText.field("Owner", CommandText.value(owner.name())))
-                    .append(CommandText.field("Account", CommandText.account(account)))
-                    .append(CommandText.field("Before", CommandText.amount(currency.formatValueComponent(previousBalance, true))))
-                    .append(CommandText.field("Now", CommandText.amount(account.formattedBalance())));
+            message = TextComponents.success("Balance updated")
+                    .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
+                    .append(TextComponents.field("Account", CommandText.account(account)))
+                    .append(TextComponents.field("Before", TextComponents.amount(currency.formatValueComponent(previousBalance, true))))
+                    .append(TextComponents.field("Now", TextComponents.amount(account.formattedBalance())));
         }
 
         source.sendSuccess(() -> message, true);
