@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "polycoin-gametest",
+  "version": "1.0.0",
+  "name": "PolyCoin Game Tests",
+  "environment": "server",
+  "entrypoints": {
+    "fabric-gametest": [
+      "polycube.polycoin.gametest.CommandIntegrationGameTests",
+      "polycube.polycoin.gametest.ProviderIntegrationGameTests",
+      "polycube.polycoin.economy.EconomyAccountGameTests",
+      "polycube.polycoin.economy.EconomyDomainGameTests"
+    ]
+  },
+  "depends": {
+    "fabricloader": "*",
+    "minecraft": "*",
+    "polycoin": "*",
+    "fabric-gametest-api-v1": "*"
+  }
+}

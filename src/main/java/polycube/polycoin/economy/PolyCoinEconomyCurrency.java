@@ -49,6 +49,7 @@ public final class PolyCoinEconomyCurrency
     static DataResult<PolyCoinEconomyCurrency> create(String id, String name, String denomination, Item icon, BigInteger defaultBalance) {
         return EconomyValidation.currencyId(id)
                 .flatMap(_ -> EconomyValidation.metadata(name, icon))
+                .flatMap(_ -> EconomyValidation.name(denomination))
                 .flatMap(_ -> EconomyValidation.money(defaultBalance))
                 .map(_ -> new PolyCoinEconomyCurrency(id, name, denomination, icon, defaultBalance));
     }
@@ -65,7 +66,7 @@ public final class PolyCoinEconomyCurrency
 
     @Override
     public Identifier id() {
-        return Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, id);
+        return PolyCoin.id(id);
     }
 
     @Override

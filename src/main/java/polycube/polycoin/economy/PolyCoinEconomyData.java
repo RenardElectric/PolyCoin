@@ -19,7 +19,7 @@ import java.util.*;
 
 /// Economy interface and sole synchronization monitor for internal stores and attached accounts.
 public final class PolyCoinEconomyData extends SavedData {
-    public static final Identifier DATA_ID = Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "polycoin_economy_data");
+    public static final Identifier DATA_ID = PolyCoin.id("polycoin_economy_data");
     public static final Codec<Map<String, PolyCoinEconomyCurrency>> CURRENCIES_CODEC = Codec.unboundedMap(EconomyValidation.ID_CODEC, PolyCoinEconomyCurrency.CODEC);
     public static final Codec<Map<String, PolyCoinEconomyAccount>> ACCOUNTS_CODEC = Codec.unboundedMap(EconomyValidation.ID_CODEC, PolyCoinEconomyAccount.CODEC);
     public static final Codec<Map<UUID, Map<String, String>>> DEFAULT_ACCOUNTS_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, Codec.unboundedMap(EconomyValidation.ID_CODEC, EconomyValidation.ID_CODEC));

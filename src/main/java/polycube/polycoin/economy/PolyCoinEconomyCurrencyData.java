@@ -22,7 +22,7 @@ public final class PolyCoinEconomyCurrencyData {
     public final static ItemStackTemplate DEFAULT_CURRENCY_ICON_TEMPLATE = new ItemStackTemplate(
             DEFAULT_CURRENCY_ICON,
             DataComponentPatch.builder()
-                    .set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "default_currency"))
+                    .set(DataComponents.ITEM_MODEL, PolyCoin.id("default_currency"))
                     .set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
                     .build()
     );

@@ -180,7 +180,7 @@ public final class PolyCoinEconomyAccount implements EconomyAccount {
     }
 
     @Override
-    public Identifier id() { return Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, id); }
+    public Identifier id() { return PolyCoin.id(id); }
 
     @Override
     public BigInteger balance() {

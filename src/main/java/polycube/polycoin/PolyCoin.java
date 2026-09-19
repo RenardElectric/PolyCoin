@@ -2,15 +2,11 @@ package polycube.polycoin;
 
 import eu.pb4.common.economy.api.CommonEconomy;
 import net.fabricmc.api.ModInitializer;
+import net.minecraft.resources.Identifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import polycube.polycoin.commands.*;
 import polycube.polycoin.economy.PolyCoinEconomyProvider;
-import polycube.polycoin.commands.BalanceCommand;
-import polycube.polycoin.commands.BalanceTopCommand;
-import polycube.polycoin.commands.AccountCommand;
-import polycube.polycoin.commands.AsCommand;
-import polycube.polycoin.commands.CurrencyCommand;
-import polycube.polycoin.commands.PayCommand;
 import polycube.polycore.commands.PolyCommands;
 
 public class PolyCoin implements ModInitializer {
@@ -36,7 +32,12 @@ public class PolyCoin implements ModInitializer {
                 balance,
                 new BalanceTopCommand(),
                 new CurrencyCommand(),
-                pay
+                pay,
+                new PnjCommand()
         );
+    }
+
+    public static Identifier id(String path) {
+        return Identifier.fromNamespaceAndPath(MOD_ID, path);
     }
 }

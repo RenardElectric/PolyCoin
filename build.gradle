@@ -37,6 +37,15 @@ loom {
     }
 }
 
+fabricApi {
+    configureTests() {
+        createSourceSet = true
+        modId = "polycoin-gametest"
+        enableClientGameTests = false
+        eula = true
+    }
+}
+
 dependencies {
     minecraft "com.mojang:minecraft:${minecraft_version}"
     implementation "net.fabricmc:fabric-loader:${loader_version}"

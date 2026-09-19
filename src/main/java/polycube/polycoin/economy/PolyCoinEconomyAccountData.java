@@ -32,7 +32,7 @@ public final class PolyCoinEconomyAccountData {
     public final static ItemStackTemplate DEFAULT_ACCOUNT_ICON_TEMPLATE = new ItemStackTemplate(
             DEFAULT_ACCOUNT_ICON,
             DataComponentPatch.builder()
-                    .set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(PolyCoin.MOD_ID, "default_account"))
+                    .set(DataComponents.ITEM_MODEL, PolyCoin.id("default_account"))
                     .set(DataComponents.ENCHANTMENT_GLINT_OVERRIDE, true)
                     .build()
     );
