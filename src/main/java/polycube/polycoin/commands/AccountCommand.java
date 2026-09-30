@@ -42,7 +42,8 @@ public final class AccountCommand extends PolyCommand {
                 "account",
                 "Lists, creates, deletes, inspects, and modifies your accounts",
                 "list [currencyId] | info [id] | default [id] | transfer <amount> [from <id>] [to <id>] | create <id> <name> <icon> [currencyId] | delete [id] [confirm] | modify [id] <name|icon|currencyId> [value] | modify [id] owners [add|remove <player>]",
-                PermissionLevel.ALL
+                PermissionLevel.ALL,
+                true
         );
     }
 
