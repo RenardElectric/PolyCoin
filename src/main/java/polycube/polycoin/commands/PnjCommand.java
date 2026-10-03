@@ -50,10 +50,8 @@ public final class PnjCommand extends PolyCommand {
 
     public PnjCommand() {
         super(
-                PolyCoin.MOD_ID,
                 "pnj",
                 "Spawns an immovable mannequin that displays the top balances",
-                "[currency] | <limit:1-100> [currency] | <limit:1-100> [currency] <pos> <yaw> <pitch>",
                 PermissionLevel.GAMEMASTERS
         );
         NpcCreator.registerNpcType(TOP_BALANCES_NPC_TYPE, TopBalancesCallback::new);
@@ -101,11 +99,11 @@ public final class PnjCommand extends PolyCommand {
         return spawn(source, ENTRY_LIMIT, null);
     }
 
-    private static int spawn(CommandSourceStack source, int limit, @Nullable String currencyId) throws CommandSyntaxException {
+    private int spawn(CommandSourceStack source, int limit, @Nullable String currencyId) throws CommandSyntaxException {
         return spawn(source, limit, currencyId, source.getPlayerOrException().position(), Vec2.ZERO);
     }
 
-    private static int spawn(CommandSourceStack source, int limit, @Nullable String currencyId, Vec3 pos, Vec2 rotation) {
+    private int spawn(CommandSourceStack source, int limit, @Nullable String currencyId, Vec3 pos, Vec2 rotation) {
         var tag = new CompoundTag();
         tag.putInt(LIMIT_TAG, limit);
         if (currencyId != null) {
@@ -121,12 +119,12 @@ public final class PnjCommand extends PolyCommand {
         );
 
         if (result.error().isPresent()) {
-            source.sendFailure(TextComponents.error("Failed to create the top balances pnj: " + result.error().get()));
+            source.sendFailure(textComponents.error("Failed to create the top balances pnj: " + result.error().get()));
             return 0;
         }
 
         source.sendSuccess(
-                () -> TextComponents.success("Spawned top balances pnj at")
+                () -> textComponents.success("Spawned top balances pnj at")
                         .append(TextComponents.value(" %.2f %.2f %.2f".formatted(pos.x, pos.y, pos.z)))
                         .append(TextComponents.muted(" (yaw: %.2f, pitch: %.2f)".formatted(Mth.wrapDegrees(rotation.x), Mth.wrapDegrees(rotation.y))))
                         .append(TextComponents.muted(" • Limit: " + limit))

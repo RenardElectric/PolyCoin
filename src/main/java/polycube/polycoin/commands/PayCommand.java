@@ -13,7 +13,6 @@ import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
 import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
-import polycube.polycore.commands.CommandResult;
 import polycube.polycore.commands.PolyCommand;
 import polycube.polycore.text.TextComponents;
 
@@ -22,10 +21,8 @@ import java.math.BigInteger;
 public final class PayCommand extends PolyCommand {
     public PayCommand() {
         super(
-                PolyCoin.MOD_ID,
                 "pay",
                 "Pays another online player from one of your accounts",
-                "<player> <amount> [from <account>] [to <account>]",
                 PermissionLevel.ALL,
                 true
         );
@@ -38,35 +35,35 @@ public final class PayCommand extends PolyCommand {
                         .suggests((context, builder) -> PolyCoinIdentifierArgument.suggestIds(
                                 context.getSource().getOnlinePlayerNames(), builder, "help"
                         ))
-                        .then(AccountArgument.transferArguments("player", this::pay))
+                        .then(AccountArgument.transferArguments(this, "player", this::pay))
         );
     }
 
     private int pay(CommandContext<CommandSourceStack> context) throws CommandSyntaxException {
         var source = context.getSource();
-        var sender = AccountArgument.getOwner(context);
+        var sender = AccountArgument.getOwner(this, context);
         var target = EntityArgument.getPlayer(context, "player");
-        BigInteger amount = AmountArgument.parse(StringArgumentType.getString(context, "amount"), false);
+        BigInteger amount = AmountArgument.parse(this, StringArgumentType.getString(context, "amount"), false);
         String sourceAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "from");
         String targetAccountId = PolyCoinIdentifierArgument.getOptionalId(context, "to");
 
         if (sender.id().equals(target.getUUID())) {
-            source.sendFailure(TextComponents.error("You cannot pay yourself. Use account transfer to move money between your accounts."));
+            source.sendFailure(textComponents.error("You cannot pay yourself. Use account transfer to move money between your accounts."));
             return 0;
         }
 
         var data = PolyCoin.INSTANCE.getData(source.getServer());
-        var accounts = AccountArgument.getTransferAccounts(data, sender.id(), sourceAccountId, target.getUUID(), targetAccountId);
+        var accounts = AccountArgument.getTransferAccounts(this, data, sender.id(), sourceAccountId, target.getUUID(), targetAccountId);
         var senderAccount = accounts.source();
         var targetAccount = accounts.target();
-        var currency = CommandResult.require(senderAccount.getCurrency());
-        CommandResult.require(data.transfer(senderAccount.getId(), targetAccount.getId(), amount));
+        var currency = commandResult.require(senderAccount.getCurrency());
+        commandResult.require(data.transfer(senderAccount.getId(), targetAccount.getId(), amount));
 
         var formattedAmount = TextComponents.amount(currency.formatValueComponent(amount, true));
         var onlineSender = source.getServer().getPlayerList().getPlayer(sender.id());
         var senderName = onlineSender == null ? Component.literal(sender.name()) : onlineSender.getDisplayName();
         source.sendSuccess(
-                () -> TextComponents.success("Paid ")
+                () -> textComponents.success("Paid ")
                         .append(formattedAmount)
                         .append(" to ").append(TextComponents.value(target.getDisplayName()))
                         .append(TextComponents.field("From account", CommandText.account(senderAccount)))
@@ -75,7 +72,7 @@ public final class PayCommand extends PolyCommand {
                 AccountArgument.isActingAs(context)
         );
         target.sendSystemMessage(
-                TextComponents.success("Received ")
+                textComponents.success("Received ")
                         .append(formattedAmount)
                         .append(" from ")
                         .append(TextComponents.value(senderName))

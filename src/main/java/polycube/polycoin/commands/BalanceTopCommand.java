@@ -15,7 +15,6 @@ import polycube.polycoin.commands.commandArguments.CurrencyArgument;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
 import polycube.polycoin.util.Helpers;
-import polycube.polycore.commands.CommandResult;
 import polycube.polycore.commands.PolyCommand;
 import polycube.polycore.text.TextComponents;
 
@@ -27,10 +26,8 @@ public final class BalanceTopCommand extends PolyCommand {
 
     public BalanceTopCommand() {
         super(
-                PolyCoin.MOD_ID,
                 "balancetop",
                 "Displays the top accounts by balance for a given currency.",
-                "[currency] | <limit:1-100> [currency]",
                 PermissionLevel.ALL,
                 true,
                 List.of("baltop")
@@ -68,9 +65,9 @@ public final class BalanceTopCommand extends PolyCommand {
 
     private int showLeaderboard(CommandSourceStack source, int limit, @Nullable String currencyId) throws CommandSyntaxException {
         PolyCoinEconomyData data = PolyCoin.INSTANCE.getData(source.getServer());
-        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(data, currencyId);
-        var entries = CommandResult.require(data.getTopAccounts(currency.getId(), limit));
-        var message = TextComponents.header("Top balances")
+        PolyCoinEconomyCurrency currency = CurrencyArgument.getCurrency(this, data, currencyId);
+        var entries = commandResult.require(data.getTopAccounts(currency.getId(), limit));
+        var message = textComponents.header("Top balances")
                 .append(TextComponents.field("Currency", CommandText.currency(currency)))
                 .append(TextComponents.muted(" • " + entries.size() + " account(s)"));
 

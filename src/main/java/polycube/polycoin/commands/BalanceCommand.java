@@ -13,7 +13,6 @@ import polycube.polycoin.PolyCoin;
 import polycube.polycoin.commands.commandArguments.AccountArgument;
 import polycube.polycoin.commands.commandArguments.AmountArgument;
 import polycube.polycoin.commands.commandArguments.PolyCoinIdentifierArgument;
-import polycube.polycore.commands.CommandResult;
 import polycube.polycore.commands.PolyCommand;
 import polycube.polycore.text.TextComponents;
 
@@ -24,10 +23,8 @@ public final class BalanceCommand extends PolyCommand {
 
     public BalanceCommand() {
         super(
-                PolyCoin.MOD_ID,
                 "balance",
                 "Displays a player's balance; set, add, and remove are admin-only",
-                "[account] [<set|add|remove> <amount>]",
                 PermissionLevel.ALL,
                 true
         );
@@ -37,7 +34,7 @@ public final class BalanceCommand extends PolyCommand {
     public LiteralArgumentBuilder<CommandSourceStack> getCommand(String name) {
         var command = super.getCommand(name).executes(context -> showBalance(context, null));
         var account = Commands.argument("account", StringArgumentType.string())
-                .suggests((context, builder) -> AccountArgument.suggestAccounts(context, builder, "help", "set", "add", "remove"))
+                .suggests((context, builder) -> AccountArgument.suggestAccounts(this, context, builder, "help", "set", "add", "remove"))
                 .executes(context -> showBalance(context, StringArgumentType.getString(context, "account")));
         for (BalanceOperation operation : BalanceOperation.values()) {
             var adjustment = Commands.literal(operation.name().toLowerCase(Locale.ROOT))
@@ -50,12 +47,12 @@ public final class BalanceCommand extends PolyCommand {
         return command.then(account);
     }
 
-    private static int showBalance(CommandContext<CommandSourceStack> context, @Nullable String accountId) throws CommandSyntaxException {
+    private int showBalance(CommandContext<CommandSourceStack> context, @Nullable String accountId) throws CommandSyntaxException {
         var source = context.getSource();
-        var owner = AccountArgument.getOwner(context);
+        var owner = AccountArgument.getOwner(this, context);
         var data = PolyCoin.INSTANCE.getData(source.getServer());
-        var account = AccountArgument.getAccount(data, owner.id(), accountId);
-        var message = TextComponents.header("Balance")
+        var account = AccountArgument.getAccount(this, data, owner.id(), accountId);
+        var message = textComponents.header("Balance")
                 .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
                 .append(TextComponents.field("Account", CommandText.account(account)))
                 .append(TextComponents.field("Available", TextComponents.amount(account.formattedBalance())));
@@ -63,30 +60,30 @@ public final class BalanceCommand extends PolyCommand {
         return 1;
     }
 
-    private static int adjustBalance(CommandContext<CommandSourceStack> context, BalanceOperation operation) throws CommandSyntaxException {
+    private int adjustBalance(CommandContext<CommandSourceStack> context, BalanceOperation operation) throws CommandSyntaxException {
         var source = context.getSource();
-        var owner = AccountArgument.getOwner(context);
-        var amount = AmountArgument.parse(StringArgumentType.getString(context, "amount"), operation == BalanceOperation.SET);
+        var owner = AccountArgument.getOwner(this, context);
+        var amount = AmountArgument.parse(this, StringArgumentType.getString(context, "amount"), operation == BalanceOperation.SET);
         var data = PolyCoin.INSTANCE.getData(source.getServer());
         Component message;
 
         // Keep the before/after snapshot and adjustment under the economy's sole monitor.
         synchronized (data) {
-            var account = AccountArgument.getAccount(data, owner.id(), PolyCoinIdentifierArgument.getOptionalId(context, "account"));
-            var currency = CommandResult.require(account.getCurrency());
+            var account = AccountArgument.getAccount(this, data, owner.id(), PolyCoinIdentifierArgument.getOptionalId(context, "account"));
+            var currency = commandResult.require(account.getCurrency());
             var previousBalance = account.balance();
             if (operation == BalanceOperation.SET) {
-                CommandResult.require(account.trySetBalance(amount));
+                commandResult.require(account.trySetBalance(amount));
             } else {
                 var transaction = operation == BalanceOperation.ADD
                         ? account.increaseBalance(amount)
                         : account.decreaseBalance(amount);
                 if (transaction.isFailure()) {
-                    source.sendFailure(TextComponents.error(transaction.message()));
+                    source.sendFailure(textComponents.error(transaction.message()));
                     return 0;
                 }
             }
-            message = TextComponents.success("Balance updated")
+            message = textComponents.success("Balance updated")
                     .append(TextComponents.field("Owner", TextComponents.value(owner.name())))
                     .append(TextComponents.field("Account", CommandText.account(account)))
                     .append(TextComponents.field("Before", TextComponents.amount(currency.formatValueComponent(previousBalance, true))))

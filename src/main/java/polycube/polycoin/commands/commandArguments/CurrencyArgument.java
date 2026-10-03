@@ -9,33 +9,33 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.resources.Identifier;
 import org.jspecify.annotations.Nullable;
 import polycube.polycoin.PolyCoin;
-import polycube.polycoin.commands.CommandText;
 import polycube.polycoin.economy.PolyCoinEconomyCurrency;
 import polycube.polycoin.economy.PolyCoinEconomyData;
-import polycube.polycore.commands.CommandResult;
-import polycube.polycore.text.TextComponents;
+import polycube.polycore.commands.PolyCommand;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
 public final class CurrencyArgument {
-    private static final DynamicCommandExceptionType INVALID_CURRENCY = new DynamicCommandExceptionType(
-            id -> TextComponents.error("Invalid currency id: " + id)
-    );
+    private static final Function<PolyCommand, DynamicCommandExceptionType> INVALID_CURRENCY =
+            command -> new DynamicCommandExceptionType(
+                    id -> command.textComponents.error("Invalid currency id: " + id)
+            );
 
     private CurrencyArgument() {}
 
-    public static PolyCoinEconomyCurrency getCurrency(CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
-        return getCurrency(PolyCoin.INSTANCE.getData(source.getServer()), rawId);
+    public static PolyCoinEconomyCurrency getCurrency(PolyCommand command, CommandSourceStack source, @Nullable String rawId) throws CommandSyntaxException {
+        return getCurrency(command, PolyCoin.INSTANCE.getData(source.getServer()), rawId);
     }
 
-    public static String parseId(String rawId) throws CommandSyntaxException {
+    public static String parseId(PolyCommand command, String rawId) throws CommandSyntaxException {
         Identifier id = PolyCoinIdentifierArgument.parse(rawId);
-        if (id == null) throw INVALID_CURRENCY.create(rawId);
+        if (id == null) throw INVALID_CURRENCY.apply(command).create(rawId);
         return id.getPath();
     }
 
-    public static PolyCoinEconomyCurrency getCurrency(PolyCoinEconomyData data, @Nullable String rawId) throws CommandSyntaxException {
-        return CommandResult.require(data.getCurrency(rawId == null ? data.getDefaultCurrency() : parseId(rawId)));
+    public static PolyCoinEconomyCurrency getCurrency(PolyCommand command, PolyCoinEconomyData data, @Nullable String rawId) throws CommandSyntaxException {
+        return command.commandResult.require(data.getCurrency(rawId == null ? data.getDefaultCurrency() : parseId(command, rawId)));
     }
 
     public static CompletableFuture<Suggestions> suggestCurrencies(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
